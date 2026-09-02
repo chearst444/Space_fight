@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Space Fight</title>
+    <style>
+        html {
+            height: 100%;
+            overscroll-behavior: none;
+        }
+        body {
+            margin: 0;
+            padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+            background-color: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            height: 100dvh;
+            overflow: hidden;
+            overscroll-behavior: none;
+            touch-action: none;
+            -webkit-user-select: none;
+            user-select: none;
+            color: #fff;
+            font-family: 'Courier New', Courier, monospace;
+        }
+        #game-container {
+            position: relative;
+            height: 96dvh;
+            aspect-ratio: 9 / 16;
+            max-width: 96vw;
+            border: 4px solid #333;
+            box-shadow: 0 0 20px rgba(0,0,0,0.8);
+            background: #000;
+            overflow: hidden;
+        }
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+        #placeholder-note {
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 18px;
+            text-align: center;
+            font-size: clamp(11px, 3vw, 14px);
+            color: #9fd8ff;
+            text-shadow: 0 2px 4px #000;
+            padding: 0 12px;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+<div id="game-container">
+    <canvas id="gameCanvas" width="405" height="720"></canvas>
+    <div id="placeholder-note">Background test &middot; ship &amp; enemies not in yet</div>
+</div>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+// ---------- Parallax starfield background ----------
+// Four layers, all the same 1080x1920 canvas, stacked back to front:
+// nebula (opaque, slowest) -> planets -> asteroids -> sparkles (fastest).
+// Each scrolls straight down continuously and wraps seamlessly by
+// drawing two copies of itself one canvas-height apart.
+const layers = [];
+function loadLayer(src, speed) {
+    const img = new Image();
+    img.src = src;
+    layers.push({ img, speed, y: 0 });
+}
+loadLayer('assets/backgrounds/layer1_nebula.png', 0.15);
+loadLayer('assets/backgrounds/layer2_planets.png', 0.35);
+loadLayer('assets/backgrounds/layer3_asteroids.png', 0.55);
+loadLayer('assets/backgrounds/layer4_sparkles.png', 0.9);
+
+function drawLayer(layer) {
+    const img = layer.img;
+    if (!img.complete || !img.naturalWidth) return;
+
+    // Scale the source image to fill the canvas width, keep its aspect ratio.
+    const scale = canvas.width / img.naturalWidth;
+    const h = img.naturalHeight * scale;
+
+    let y = layer.y % h;
+    if (y > 0) y -= h;
+    for (; y < canvas.height; y += h) {
+        ctx.drawImage(img, 0, y, canvas.width, h);
+    }
+}
+
+function updateLayers() {
+    layers.forEach(layer => { layer.y += layer.speed; });
+}
+
+function render() {
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    layers.forEach(drawLayer);
+}
+
+function loop() {
+    updateLayers();
+    render();
+    requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>
