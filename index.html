@@ -128,6 +128,40 @@ const player = {
     speed: 4.5, // px/frame for keyboard movement
 };
 
+// Engine flame: a 5-frame flicker (cropped from a full ship+flame
+// composite you sent, keeping just the part that actually changed
+// between frames) drawn behind whichever ship tier is active, so it
+// works the same regardless of tier instead of being baked into one.
+const FLAME_FRAME_COUNT = 5;
+const flameImages = Array.from({ length: FLAME_FRAME_COUNT }, (_, i) => {
+    const img = new Image();
+    img.src = `assets/ship/flame_${i}.png`;
+    return img;
+});
+const FLAME_DISPLAY_HEIGHT = 46;
+const FLAME_FRAME_MS = 70; // how long each flicker frame holds
+let flameFrame = 0;
+let flameTimer = 0;
+
+function updateFlame(dt) {
+    flameTimer += dt;
+    while (flameTimer >= FLAME_FRAME_MS) {
+        flameTimer -= FLAME_FRAME_MS;
+        flameFrame = (flameFrame + 1) % FLAME_FRAME_COUNT;
+    }
+}
+
+function drawFlame() {
+    const img = flameImages[flameFrame];
+    if (!img || !img.complete || !img.naturalWidth) return;
+    const scale = FLAME_DISPLAY_HEIGHT / img.naturalHeight;
+    const w = img.naturalWidth * scale;
+    const h = FLAME_DISPLAY_HEIGHT;
+    const overlap = 6; // tucks the flame's top up into the ship's nozzle
+    const topY = player.y + SHIP_DISPLAY_HEIGHT / 2 - overlap;
+    ctx.drawImage(img, player.x - w / 2, topY, w, h);
+}
+
 function drawPlayer() {
     const img = shipImages[player.tier];
     if (!img || !img.complete || !img.naturalWidth) return;
@@ -195,16 +229,21 @@ function render() {
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     layers.forEach(drawLayer);
+    drawFlame(); // behind the ship, so it reads as coming out of the nozzle
     drawPlayer();
 }
 
-function loop() {
+let lastTime = 0;
+function loop(time) {
+    const dt = lastTime ? time - lastTime : 16;
+    lastTime = time;
     updateLayers();
     updatePlayer();
+    updateFlame(dt);
     render();
     requestAnimationFrame(loop);
 }
-loop();
+requestAnimationFrame(loop);
 </script>
 </body>
 </html>
