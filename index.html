@@ -60,7 +60,7 @@
 <body>
 <div id="game-container">
     <canvas id="gameCanvas" width="405" height="720"></canvas>
-    <div id="placeholder-note">Background test &middot; ship &amp; enemies not in yet</div>
+    <div id="placeholder-note">Drag or arrow keys to fly &middot; keys 1-4 preview upgrade tiers &middot; enemies not in yet</div>
 </div>
 
 <script>
@@ -102,14 +102,105 @@ function updateLayers() {
     layers.forEach(layer => { layer.y += layer.speed; });
 }
 
+// ---------- Player ship ----------
+// Four upgrade tiers - the ship's look changes as the player powers up.
+// Ordered by how armed/aggressive each design reads: 1 is the plain
+// starting hull, 4 is the heaviest (visible triple cannons on each wing).
+const SHIP_TIER_SRC = [
+    null, // tiers are 1-indexed to match the in-game upgrade count
+    'assets/ship/ship_tier1.png',
+    'assets/ship/ship_tier2.png',
+    'assets/ship/ship_tier3.png',
+    'assets/ship/ship_tier4.png',
+];
+const shipImages = SHIP_TIER_SRC.map(src => {
+    if (!src) return null;
+    const img = new Image();
+    img.src = src;
+    return img;
+});
+const SHIP_DISPLAY_HEIGHT = 68; // on-screen height in canvas px, same for every tier
+
+const player = {
+    x: canvas.width / 2,
+    y: canvas.height - 110,
+    tier: 1,
+    speed: 4.5, // px/frame for keyboard movement
+};
+
+function drawPlayer() {
+    const img = shipImages[player.tier];
+    if (!img || !img.complete || !img.naturalWidth) return;
+    const scale = SHIP_DISPLAY_HEIGHT / img.naturalHeight;
+    const w = img.naturalWidth * scale;
+    const h = SHIP_DISPLAY_HEIGHT;
+    ctx.drawImage(img, player.x - w / 2, player.y - h / 2, w, h);
+}
+
+function clampPlayer() {
+    const half = SHIP_DISPLAY_HEIGHT / 2;
+    player.x = Math.min(canvas.width - half, Math.max(half, player.x));
+    player.y = Math.min(canvas.height - half, Math.max(half, player.y));
+}
+
+// Keyboard: arrows or WASD to fly, 1-4 to preview an upgrade tier (a
+// stand-in for real power-up pickups, which aren't built yet).
+const keys = { up: false, down: false, left: false, right: false };
+window.addEventListener('keydown', (e) => {
+    if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
+    if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') keys.up = true;
+    if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') keys.down = true;
+    if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') keys.left = true;
+    if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keys.right = true;
+    if (['1','2','3','4'].includes(e.key)) player.tier = parseInt(e.key, 10);
+});
+window.addEventListener('keyup', (e) => {
+    if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') keys.up = false;
+    if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') keys.down = false;
+    if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') keys.left = false;
+    if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keys.right = false;
+});
+
+// Touch/mouse: drag anywhere on the canvas to fly the ship straight to
+// the pointer, in canvas-space coordinates (accounts for CSS scaling).
+let dragging = false;
+function pointerToCanvas(clientX, clientY) {
+    const rect = canvas.getBoundingClientRect();
+    return {
+        x: (clientX - rect.left) * (canvas.width / rect.width),
+        y: (clientY - rect.top) * (canvas.height / rect.height),
+    };
+}
+canvas.addEventListener('pointerdown', (e) => {
+    dragging = true;
+    const p = pointerToCanvas(e.clientX, e.clientY);
+    player.x = p.x; player.y = p.y;
+});
+canvas.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    const p = pointerToCanvas(e.clientX, e.clientY);
+    player.x = p.x; player.y = p.y;
+});
+window.addEventListener('pointerup', () => { dragging = false; });
+
+function updatePlayer() {
+    if (keys.up) player.y -= player.speed;
+    if (keys.down) player.y += player.speed;
+    if (keys.left) player.x -= player.speed;
+    if (keys.right) player.x += player.speed;
+    clampPlayer();
+}
+
 function render() {
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     layers.forEach(drawLayer);
+    drawPlayer();
 }
 
 function loop() {
     updateLayers();
+    updatePlayer();
     render();
     requestAnimationFrame(loop);
 }
