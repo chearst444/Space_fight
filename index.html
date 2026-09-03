@@ -79,6 +79,22 @@
         #feedback.hidden { opacity: 0; }
         #feedback.good { color: #7CFC9A; }
         #feedback.bad { color: #ff8f7a; }
+        #funFact {
+            position: absolute;
+            left: 14px; right: 14px; bottom: 96px;
+            background: rgba(10, 12, 34, 0.82);
+            border: 1px solid rgba(159, 216, 255, 0.5);
+            border-radius: 10px;
+            padding: 8px 12px;
+            text-align: center;
+            font-size: clamp(11px, 3.2vw, 13.5px);
+            line-height: 1.35;
+            color: #cdeaff;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.5s;
+        }
+        #funFact.show { opacity: 1; }
         #fireBtn {
             position: absolute;
             right: 16px; bottom: 22px;
@@ -118,6 +134,7 @@
     </div>
     <div id="quizBanner">Get ready...</div>
     <div id="feedback" class="hidden"></div>
+    <div id="funFact"></div>
     <div id="fireBtn">FIRE</div>
     <div id="gameOver" class="hidden">
         <h2>SHIP DESTROYED</h2>
@@ -148,6 +165,7 @@ const gameOverEl = document.getElementById('gameOver');
 const finalScoreEl = document.getElementById('finalScore');
 const quizBannerEl = document.getElementById('quizBanner');
 const feedbackEl = document.getElementById('feedback');
+const funFactEl = document.getElementById('funFact');
 
 function loadImage(src) {
     const img = new Image();
@@ -327,6 +345,32 @@ const QUESTIONS = [
     { q: 'What galaxy is heading toward a collision with the Milky Way?', choices: ['Triangulum', 'Andromeda', 'Whirlpool'], correct: 1 },
 ];
 
+// Ambient trivia that just pops up on its own every so often - not part of
+// the quiz, just flavor text tying the floating debris/satellites to real
+// facts about them.
+const FUN_FACTS = [
+    "Did you know? There are over 30,000 pieces of tracked space debris circling Earth right now.",
+    "Fun fact: About 3,000 working satellites are orbiting Earth as you play this!",
+    "Did you know? Space debris can zoom around Earth at over 17,000 mph.",
+    "Fun fact: The International Space Station sometimes has to steer around space junk!",
+    "Did you know? The first satellite ever, Sputnik 1, launched all the way back in 1957.",
+    "Fun fact: Even a piece of space junk as small as a marble can damage a satellite.",
+    "Did you know? Astronauts on the ISS see 16 sunrises and sunsets every single day.",
+    "Fun fact: There's no sound in space - no air means nothing to carry the noise!",
+    "Did you know? The Moon drifts about 1.5 inches farther from Earth every year.",
+    "Fun fact: One day on Venus is longer than one whole year on Venus!",
+];
+let nextFunFactAt = 0;
+let funFactHideTimer = null;
+function maybeShowFunFact(time) {
+    if (time < nextFunFactAt) return;
+    funFactEl.textContent = FUN_FACTS[Math.floor(Math.random() * FUN_FACTS.length)];
+    funFactEl.classList.add('show');
+    clearTimeout(funFactHideTimer);
+    funFactHideTimer = setTimeout(() => funFactEl.classList.remove('show'), 4500);
+    nextFunFactAt = time + 16000 + Math.random() * 8000;
+}
+
 function shuffle(arr) {
     for (let i = arr.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
@@ -335,7 +379,11 @@ function shuffle(arr) {
     return arr;
 }
 
-const enemyHealthyImg = loadImage('assets/enemy/enemy_ship.png');
+// Quiz targets are tumbling chunks of wrecked-ship debris (cropped from the
+// old enemy ship art) rather than a whole enemy ship - less "you're fighting
+// a bad guy," more "here's some space junk floating by," which also sets up
+// the debris/satellite fun facts below.
+const debrisImgs = [0, 1, 2].map(i => loadImage(`assets/hazards/debris/piece_${i}.png`));
 const ENEMY_DISPLAY_H = 58;
 let quizShips = [];
 let questionQueue = [];
@@ -367,11 +415,14 @@ function spawnQuizWave(retry) {
         correct: o.correct,
         hit: false,
         r: ENEMY_DISPLAY_H * 0.4,
+        img: debrisImgs[Math.floor(Math.random() * debrisImgs.length)],
+        angle: Math.random() * Math.PI * 2,
+        spin: (Math.random() - 0.5) * 0.03,
     }));
 }
 
 function updateQuizShips(dt) {
-    quizShips.forEach(s => { s.y += s.speed * (dt / 16); });
+    quizShips.forEach(s => { s.y += s.speed * (dt / 16); s.angle += s.spin * (dt / 16); });
     const hadShips = quizShips.length > 0;
     quizShips = quizShips.filter(s => s.y < GAME_H + ENEMY_DISPLAY_H + 60 && !s.hit);
     if (hadShips && quizShips.length === 0 && waveEndAt === 0) {
@@ -419,12 +470,19 @@ function drawLabel(text, cx, topY, maxWidth) {
 }
 function drawQuizShips() {
     quizShips.forEach(s => {
-        const img = enemyHealthyImg;
+        const img = s.img;
         if (!img.complete || !img.naturalWidth) return;
-        const scale = ENEMY_DISPLAY_H / img.naturalHeight;
-        const w = img.naturalWidth * scale, h = ENEMY_DISPLAY_H;
-        ctx.drawImage(img, s.x - w / 2, s.y - h / 2, w, h);
-        drawLabel(s.text, s.x, s.y + h / 2 + 4, w + 30);
+        // Debris pieces have very different aspect ratios (a tall nose chunk
+        // vs. a wide tail chunk), so fit each within a box instead of always
+        // scaling by height - otherwise the wide pieces would blow up huge.
+        const scale = ENEMY_DISPLAY_H / Math.max(img.naturalWidth, img.naturalHeight);
+        const w = img.naturalWidth * scale, h = img.naturalHeight * scale;
+        ctx.save();
+        ctx.translate(s.x, s.y);
+        ctx.rotate(s.angle);
+        ctx.drawImage(img, -w / 2, -h / 2, w, h);
+        ctx.restore();
+        drawLabel(s.text, s.x, s.y + h / 2 + 4, Math.max(w, 70) + 30);
     });
 }
 
@@ -496,6 +554,9 @@ function resetGame() {
     clearTimeout(feedbackTimer);
     waveEndAt = performance.now() + 500;
     waveIsRetry = false;
+    funFactEl.classList.remove('show');
+    clearTimeout(funFactHideTimer);
+    nextFunFactAt = performance.now() + 6000 + Math.random() * 4000;
     updateHud();
     gameOverEl.classList.add('hidden');
 }
@@ -643,12 +704,14 @@ function loop(time) {
         updateQuizShips(dt);
         resolveCollisions(time);
         maybeSpawnQuizWave(time);
+        maybeShowFunFact(time);
     }
     render(time);
     requestAnimationFrame(loop);
 }
 buildQuestionQueue();
 waveEndAt = performance.now() + 500;
+nextFunFactAt = performance.now() + 6000 + Math.random() * 4000;
 updateHud();
 requestAnimationFrame(loop);
 </script>
