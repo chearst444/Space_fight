@@ -147,19 +147,6 @@
             transition: opacity 0.4s;
         }
         #levelUp.hidden { opacity: 0; }
-        #fireBtn {
-            position: absolute;
-            right: 16px; bottom: 22px;
-            width: 64px; height: 64px;
-            border-radius: 50%;
-            background: rgba(255,90,60,0.28);
-            border: 2px solid rgba(255,140,110,0.8);
-            color: #ffd9cc;
-            font-size: 11px;
-            display: flex; align-items: center; justify-content: center;
-            text-align: center;
-            touch-action: none;
-        }
         #gameOver, #winScreen {
             position: absolute;
             inset: 0;
@@ -257,7 +244,6 @@
     <div id="feedback" class="hidden"></div>
     <div id="levelUp" class="hidden"></div>
     <div id="funFactWrap"><div id="funFact"><span id="funFactText"></span><span id="funFactHint">TAP TO CONTINUE</span></div></div>
-    <div id="fireBtn">FIRE</div>
     <div id="gameOver" class="hidden">
         <h2>SHIP DESTROYED</h2>
         <p id="finalScore"></p>
@@ -922,9 +908,18 @@ window.addEventListener('keyup', (e) => {
     if (e.key === ' ') keys.fire = false;
 });
 
-// Touch/mouse: drag anywhere on the canvas to fly the ship straight to
-// the pointer, in canvas-space coordinates (accounts for CSS scaling).
-let dragging = false;
+// Touch/mouse: a quick tap fires a shot in place; press and hold (whether
+// or not you drag) flies the ship to the pointer instead, tracking it
+// continuously for as long as it's held. Whether a press turns into a
+// "hold" is decided by whichever comes first - moving past TAP_MAX_MOVE
+// (a real drag) or just staying down past TAP_MAX_HOLD_MS (a stationary
+// hold, checked once per frame in loop()) - so mashing out shots never
+// also yanks the ship around, but you never have to drag to fly it either.
+let pointerDown = null;  // {x, y, t} in canvas space while a press is unresolved, else null
+let dragging = false;    // true once the current press has committed to "hold to move"
+const TAP_MAX_MOVE = 12;      // canvas px of motion still forgiven as a tap
+const TAP_MAX_HOLD_MS = 180;  // ms held before a stationary press becomes a hold
+
 function pointerToCanvas(clientX, clientY) {
     const rect = canvas.getBoundingClientRect();
     return {
@@ -932,22 +927,29 @@ function pointerToCanvas(clientX, clientY) {
         y: (clientY - rect.top) * (GAME_H / rect.height),
     };
 }
-canvas.addEventListener('pointerdown', (e) => {
+function engageDrag(p) {
     dragging = true;
-    const p = pointerToCanvas(e.clientX, e.clientY);
     player.x = p.x; player.y = p.y;
+}
+canvas.addEventListener('pointerdown', (e) => {
+    const p = pointerToCanvas(e.clientX, e.clientY);
+    pointerDown = { x: p.x, y: p.y, t: performance.now() };
+    dragging = false;
 });
 canvas.addEventListener('pointermove', (e) => {
-    if (!dragging) return;
+    if (!pointerDown) return;
     const p = pointerToCanvas(e.clientX, e.clientY);
-    player.x = p.x; player.y = p.y;
+    if (dragging) { player.x = p.x; player.y = p.y; return; }
+    if (Math.hypot(p.x - pointerDown.x, p.y - pointerDown.y) > TAP_MAX_MOVE) engageDrag(p);
 });
-window.addEventListener('pointerup', () => { dragging = false; });
-
-const fireBtn = document.getElementById('fireBtn');
-fireBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); keys.fire = true; });
-fireBtn.addEventListener('pointerup', (e) => { e.preventDefault(); keys.fire = false; });
-fireBtn.addEventListener('pointercancel', () => { keys.fire = false; });
+function endPointer() {
+    // Resolved without ever becoming a hold - that's a tap, so fire once.
+    if (pointerDown && !dragging) tryFire(performance.now());
+    pointerDown = null;
+    dragging = false;
+}
+window.addEventListener('pointerup', endPointer);
+window.addEventListener('pointercancel', endPointer);
 
 // Belt-and-suspenders against mobile browsers' double-tap-to-zoom and
 // pinch-zoom gestures - touch-action:none on the container should already
@@ -1000,6 +1002,7 @@ function loop(time) {
     lastTime = time;
 
     if (gameStarted && !gameOver) {
+        if (pointerDown && !dragging && (time - pointerDown.t) > TAP_MAX_HOLD_MS) engageDrag(pointerDown);
         updateLayers(dt);
         updatePlayer(dt);
         updateFlame(dt);
