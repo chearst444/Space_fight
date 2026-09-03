@@ -201,7 +201,7 @@ function loadImage(src) {
 // transition is a palette swap, not a jump-cut.
 const LAYER_SPEEDS = [0.15, 0.35, 0.55, 0.9];
 const LAYER_FILES = ['layer1_nebula.png', 'layer2_planets.png', 'layer3_asteroids.png', 'layer4_sparkles.png'];
-const LEVEL_BACKGROUND_DIRS = ['assets/backgrounds', 'assets/backgrounds/level2', 'assets/backgrounds/level3'];
+const LEVEL_BACKGROUND_DIRS = ['assets/backgrounds', 'assets/backgrounds/level2', 'assets/backgrounds/level3', 'assets/backgrounds/level4'];
 const levelBackgroundSets = LEVEL_BACKGROUND_DIRS.map(dir => LAYER_FILES.map(f => loadImage(`${dir}/${f}`)));
 
 const layers = LAYER_SPEEDS.map((speed, i) => ({ img: levelBackgroundSets[0][i], speed, y: 0 }));
