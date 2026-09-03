@@ -88,39 +88,40 @@
         #feedback.hidden { opacity: 0; }
         #feedback.good { color: #7CFC9A; }
         #feedback.bad { color: #ff8f7a; }
+        /* A full-screen card that flips in over the gameplay to show one
+           "Did you know" fact, then flips back out to reveal the starfield
+           and gameplay again - not a little holder floating over the
+           action, an actual break from it. */
+        #funFactWrap {
+            position: absolute;
+            inset: 0;
+            perspective: 1200px;
+            pointer-events: none;
+            z-index: 30;
+        }
         #funFact {
             position: absolute;
-            left: 50%; bottom: 84px;
-            transform: translateX(-50%);
-            width: min(90%, 340px);
-            aspect-ratio: 751 / 461;
-            background-image: linear-gradient(rgba(0,0,0,0.55), rgba(0,0,0,0.55)), url('assets/ui/vault_panel.png');
-            background-size: 100% 100%, 100% 100%;
-            background-repeat: no-repeat;
-            box-sizing: border-box;
+            inset: 0;
+            background: radial-gradient(ellipse at 50% 40%, #131a3d 0%, #05060f 75%);
             display: flex;
             align-items: center;
             justify-content: center;
-            padding: 8% 12% 13% 10%;
+            padding: 15%;
+            box-sizing: border-box;
             text-align: center;
             font-family: 'VaultUI', 'Courier New', Courier, monospace;
-            font-size: clamp(21px, 6vw, 26px);
-            line-height: 1.35;
+            font-size: clamp(19px, 5.6vw, 25px);
+            line-height: 1.45;
             letter-spacing: 0.3px;
             color: #dff1ff;
-            text-shadow: 0 1px 2px rgba(0,0,0,0.5);
-            pointer-events: none;
+            text-shadow: 0 2px 6px rgba(0,0,0,0.6);
+            transform: rotateY(-100deg);
             opacity: 0;
-            transition: opacity 0.6s;
+            transition: transform 0.5s ease, opacity 0.3s ease;
         }
-        #funFact.show { opacity: 1; }
+        #funFactWrap.show #funFact { transform: rotateY(0deg); opacity: 1; }
         #funFact.theme-l5 {
-            background-image:
-                linear-gradient(rgba(0,0,0,0.55), rgba(0,0,0,0.55)),
-                linear-gradient(135deg, hsl(140, 65%, 42%), hsl(285, 45%, 45%)),
-                url('assets/ui/vault_panel.png');
-            background-blend-mode: normal, color;
-            background-size: 100% 100%, 100% 100%, 100% 100%;
+            background: radial-gradient(ellipse at 50% 40%, hsl(140, 55%, 16%) 0%, hsl(285, 40%, 10%) 75%);
         }
         #levelUp {
             position: absolute;
@@ -181,7 +182,7 @@
     <div id="quizBanner">Get ready...</div>
     <div id="feedback" class="hidden"></div>
     <div id="levelUp" class="hidden"></div>
-    <div id="funFact"></div>
+    <div id="funFactWrap"><div id="funFact"></div></div>
     <div id="fireBtn">FIRE</div>
     <div id="gameOver" class="hidden">
         <h2>SHIP DESTROYED</h2>
@@ -220,6 +221,7 @@ const winFinalScoreEl = document.getElementById('winFinalScore');
 const quizBannerEl = document.getElementById('quizBanner');
 const feedbackEl = document.getElementById('feedback');
 const funFactEl = document.getElementById('funFact');
+const funFactWrapEl = document.getElementById('funFactWrap');
 const levelUpEl = document.getElementById('levelUp');
 
 function loadImage(src) {
@@ -483,9 +485,9 @@ function buildFactQueue() {
 function showDidYouKnow() {
     if (factPos >= factQueue.length) buildFactQueue();
     funFactEl.textContent = DID_YOU_KNOW[factQueue[factPos++]];
-    funFactEl.classList.add('show');
+    funFactWrapEl.classList.add('show');
     clearTimeout(funFactHideTimer);
-    funFactHideTimer = setTimeout(() => funFactEl.classList.remove('show'), 4800);
+    funFactHideTimer = setTimeout(() => funFactWrapEl.classList.remove('show'), 4800);
 }
 
 function shuffle(arr) {
@@ -677,7 +679,7 @@ function resetGame() {
     waveIsRetry = false;
     correctCount = 0;
     buildFactQueue();
-    funFactEl.classList.remove('show');
+    funFactWrapEl.classList.remove('show');
     funFactEl.classList.remove('theme-l5');
     clearTimeout(funFactHideTimer);
     updateHud();
