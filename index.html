@@ -78,6 +78,11 @@
             transition: opacity 0.6s;
         }
         #funFact.show { opacity: 1; }
+        #funFact.theme-l5 {
+            background: linear-gradient(135deg, rgba(19, 160, 75, 0.28), rgba(141, 102, 141, 0.32)), rgba(10, 12, 34, 0.88);
+            border-color: rgba(180, 140, 200, 0.65);
+            box-shadow: 0 0 14px rgba(19, 239, 75, 0.3), 0 0 12px rgba(180, 120, 200, 0.35);
+        }
         #levelUp {
             position: absolute;
             top: 40%; left: 0; right: 0;
@@ -104,7 +109,7 @@
             text-align: center;
             touch-action: none;
         }
-        #gameOver {
+        #gameOver, #winScreen {
             position: absolute;
             inset: 0;
             background: rgba(0,0,0,0.72);
@@ -116,9 +121,15 @@
             text-align: center;
             padding: 0 20px;
         }
-        #gameOver.hidden { display: none; }
+        #gameOver.hidden, #winScreen.hidden { display: none; }
         #gameOver h2 { margin: 0; color: #ff6b5e; font-size: clamp(20px, 6vw, 30px); }
         #gameOver p { margin: 0; color: #9fd8ff; font-size: clamp(12px, 3.6vw, 15px); }
+        #winScreen h2 {
+            margin: 0; color: #ffe27a; font-size: clamp(24px, 7vw, 34px);
+            font-family: 'VaultUI', 'Courier New', Courier, monospace;
+            text-shadow: 0 0 14px rgba(255, 210, 90, 0.7);
+        }
+        #winScreen p { margin: 0; color: #9fffc0; font-size: clamp(12px, 3.6vw, 15px); }
     </style>
 </head>
 <body>
@@ -135,6 +146,11 @@
         <h2>SHIP DESTROYED</h2>
         <p id="finalScore"></p>
         <p>Tap to restart</p>
+    </div>
+    <div id="winScreen" class="hidden">
+        <h2>YOU WIN!</h2>
+        <p id="winFinalScore"></p>
+        <p>Tap to play again</p>
     </div>
 </div>
 
@@ -158,6 +174,8 @@ const scoreEl = document.getElementById('score');
 const livesEl = document.getElementById('lives');
 const gameOverEl = document.getElementById('gameOver');
 const finalScoreEl = document.getElementById('finalScore');
+const winScreenEl = document.getElementById('winScreen');
+const winFinalScoreEl = document.getElementById('winFinalScore');
 const funFactEl = document.getElementById('funFact');
 const levelUpEl = document.getElementById('levelUp');
 
@@ -174,7 +192,7 @@ function loadImage(src) {
 // transition is a palette swap, not a jump-cut.
 const LAYER_SPEEDS = [0.15, 0.35, 0.55, 0.9];
 const LAYER_FILES = ['layer1_nebula.png', 'layer2_planets.png', 'layer3_asteroids.png', 'layer4_sparkles.png'];
-const LEVEL_BACKGROUND_DIRS = ['assets/backgrounds', 'assets/backgrounds/level2', 'assets/backgrounds/level3', 'assets/backgrounds/level4'];
+const LEVEL_BACKGROUND_DIRS = ['assets/backgrounds', 'assets/backgrounds/level2', 'assets/backgrounds/level3', 'assets/backgrounds/level4', 'assets/backgrounds/level5'];
 const levelBackgroundSets = LEVEL_BACKGROUND_DIRS.map(dir => LAYER_FILES.map(f => loadImage(`${dir}/${f}`)));
 
 const layers = LAYER_SPEEDS.map((speed, i) => ({ img: levelBackgroundSets[0][i], speed, y: 0 }));
@@ -230,13 +248,17 @@ const player = {
     invulnUntil: 0,
 };
 
-// Every 100 points takes you up a level - each level swaps in its own
-// background palette (see levelBackgroundSets above) and hands out a
-// "Did you know" card as the transition.
-const POINTS_PER_LEVEL = 100;
+// Levels 1-4 each take 100 points to reach; level 5 is the last one and
+// takes 200 points to clear (so 400 to enter it, 600 total to win). Each
+// level-up swaps in its own background palette (see levelBackgroundSets
+// above) and hands out a "Did you know" card as the transition.
+const LEVEL_START_SCORE = [0, 100, 200, 300, 400];
+const WIN_SCORE = 600;
 let levelUpHideTimer = null;
+let won = false;
+
 function checkLevelUp() {
-    const newLevel = Math.floor(score / POINTS_PER_LEVEL) + 1;
+    const newLevel = LEVEL_START_SCORE.filter(t => score >= t).length;
     if (newLevel <= player.level) return;
     player.level = newLevel;
     applyBackgroundSet(newLevel - 1);
@@ -247,7 +269,22 @@ function checkLevelUp() {
     clearTimeout(levelUpHideTimer);
     levelUpHideTimer = setTimeout(() => levelUpEl.classList.add('hidden'), 2400);
 
+    // Level 5's "Did you know" card picks up the purple/green from its own
+    // background art instead of the default blue theme.
+    funFactEl.classList.toggle('theme-l5', newLevel === 5);
+
     showDidYouKnow();
+}
+
+function checkWin() {
+    if (won || score < WIN_SCORE) return;
+    won = true;
+    gameOver = true;
+    for (let i = 0; i < 14; i++) {
+        spawnExplosion(Math.random() * GAME_W, GAME_H * 0.15 + Math.random() * GAME_H * 0.6, 36 + Math.random() * 48);
+    }
+    winFinalScoreEl.textContent = 'Final score: ' + score;
+    winScreenEl.classList.remove('hidden');
 }
 
 const FLAME_FRAME_MS = 70;
@@ -432,6 +469,7 @@ function resetGame() {
     score = 0;
     lives = 3;
     gameOver = false;
+    won = false;
     player.x = GAME_W / 2;
     player.y = GAME_H - 110;
     player.tier = 1;
@@ -446,9 +484,11 @@ function resetGame() {
     nextAsteroidAt = 0;
     buildFactQueue();
     funFactEl.classList.remove('show');
+    funFactEl.classList.remove('theme-l5');
     clearTimeout(funFactHideTimer);
     updateHud();
     gameOverEl.classList.add('hidden');
+    winScreenEl.classList.add('hidden');
 }
 
 function circleHit(ax, ay, ar, bx, by, br) {
@@ -478,6 +518,7 @@ function resolveCollisions(time) {
                 b.y = -999;
                 updateHud();
                 checkLevelUp();
+                checkWin();
             }
         });
     });
@@ -535,6 +576,7 @@ fireBtn.addEventListener('pointerup', (e) => { e.preventDefault(); keys.fire = f
 fireBtn.addEventListener('pointercancel', () => { keys.fire = false; });
 
 gameOverEl.addEventListener('pointerdown', (e) => { e.preventDefault(); resetGame(); });
+winScreenEl.addEventListener('pointerdown', (e) => { e.preventDefault(); resetGame(); });
 
 function updatePlayer(dt) {
     const move = player.speed * (dt / 16);
