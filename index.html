@@ -101,6 +101,19 @@
             transition: opacity 0.6s;
         }
         #funFact.show { opacity: 1; }
+        #levelUp {
+            position: absolute;
+            top: 40%; left: 0; right: 0;
+            text-align: center;
+            font-family: 'VaultUI', 'Courier New', Courier, monospace;
+            font-size: clamp(20px, 7vw, 32px);
+            letter-spacing: 2px;
+            color: #ffe27a;
+            text-shadow: 0 0 10px rgba(255, 210, 90, 0.8), 0 2px 4px #000;
+            pointer-events: none;
+            transition: opacity 0.4s;
+        }
+        #levelUp.hidden { opacity: 0; }
         #fireBtn {
             position: absolute;
             right: 16px; bottom: 22px;
@@ -135,11 +148,12 @@
 <div id="game-container">
     <canvas id="gameCanvas"></canvas>
     <div id="hud">
-        <div id="score">SCORE 0</div>
+        <div id="score">SCORE 0 &middot; LV1</div>
         <div id="lives">&#9650;&#9650;&#9650;</div>
     </div>
     <div id="quizBanner">Get ready...</div>
     <div id="feedback" class="hidden"></div>
+    <div id="levelUp" class="hidden"></div>
     <div id="funFact"></div>
     <div id="fireBtn">FIRE</div>
     <div id="gameOver" class="hidden">
@@ -172,6 +186,7 @@ const finalScoreEl = document.getElementById('finalScore');
 const quizBannerEl = document.getElementById('quizBanner');
 const feedbackEl = document.getElementById('feedback');
 const funFactEl = document.getElementById('funFact');
+const levelUpEl = document.getElementById('levelUp');
 
 function loadImage(src) {
     const img = new Image();
@@ -180,14 +195,21 @@ function loadImage(src) {
 }
 
 // ---------- Parallax starfield background ----------
-const layers = [];
-function loadLayer(src, speed) {
-    layers.push({ img: loadImage(src), speed, y: 0 });
+// Each level has its own 4-layer background set (same file names, one
+// folder per level); leveling up swaps which images the existing layer
+// objects point to without resetting their scroll position, so the
+// transition is a palette swap, not a jump-cut.
+const LAYER_SPEEDS = [0.15, 0.35, 0.55, 0.9];
+const LAYER_FILES = ['layer1_nebula.png', 'layer2_planets.png', 'layer3_asteroids.png', 'layer4_sparkles.png'];
+const LEVEL_BACKGROUND_DIRS = ['assets/backgrounds', 'assets/backgrounds/level2'];
+const levelBackgroundSets = LEVEL_BACKGROUND_DIRS.map(dir => LAYER_FILES.map(f => loadImage(`${dir}/${f}`)));
+
+const layers = LAYER_SPEEDS.map((speed, i) => ({ img: levelBackgroundSets[0][i], speed, y: 0 }));
+
+function applyBackgroundSet(levelIndex) {
+    const set = levelBackgroundSets[Math.min(levelIndex, levelBackgroundSets.length - 1)];
+    layers.forEach((layer, i) => { layer.img = set[i]; });
 }
-loadLayer('assets/backgrounds/layer1_nebula.png', 0.15);
-loadLayer('assets/backgrounds/layer2_planets.png', 0.35);
-loadLayer('assets/backgrounds/layer3_asteroids.png', 0.55);
-loadLayer('assets/backgrounds/layer4_sparkles.png', 0.9);
 
 function drawLayer(layer) {
     const img = layer.img;
@@ -230,9 +252,32 @@ const player = {
     x: GAME_W / 2,
     y: GAME_H - 110,
     tier: 1,
+    level: 1,
     speed: 4.5,
     invulnUntil: 0,
 };
+
+// Every 100 points takes you up a level - each level swaps in its own
+// background palette (see levelBackgroundSets above) and hands out a
+// "Did you know" card as the transition.
+const POINTS_PER_LEVEL = 100;
+let levelUpHideTimer = null;
+function checkLevelUp() {
+    const newLevel = Math.floor(score / POINTS_PER_LEVEL) + 1;
+    if (newLevel <= player.level) return;
+    player.level = newLevel;
+    applyBackgroundSet(newLevel - 1);
+    updateHud();
+
+    levelUpEl.textContent = `★ LEVEL ${newLevel} ★`;
+    levelUpEl.classList.remove('hidden');
+    clearTimeout(levelUpHideTimer);
+    levelUpHideTimer = setTimeout(() => levelUpEl.classList.add('hidden'), 2400);
+
+    showDidYouKnow();
+    waveEndAt = Math.max(waveEndAt, performance.now() + 5200);
+    waveIsRetry = false;
+}
 
 const FLAME_FRAME_MS = 70;
 let flameFrame = 0;
@@ -535,7 +580,7 @@ let score = 0;
 let lives = 3;
 let gameOver = false;
 function updateHud() {
-    scoreEl.textContent = 'SCORE ' + score;
+    scoreEl.textContent = `SCORE ${score} · LV${player.level}`;
     livesEl.textContent = '▲'.repeat(Math.max(0, lives));
 }
 
@@ -558,7 +603,11 @@ function resetGame() {
     player.x = GAME_W / 2;
     player.y = GAME_H - 110;
     player.tier = 1;
+    player.level = 1;
     player.invulnUntil = 0;
+    applyBackgroundSet(0);
+    levelUpEl.classList.add('hidden');
+    clearTimeout(levelUpHideTimer);
     bullets = [];
     asteroids = [];
     explosions = [];
@@ -621,6 +670,7 @@ function resolveCollisions(time) {
                         waveEndAt = performance.now() + 1400;
                     }
                     waveIsRetry = false;
+                    checkLevelUp();
                 } else {
                     showFeedback('Not quite - try again!', false);
                 }
@@ -637,6 +687,7 @@ function resolveCollisions(time) {
                 a.y = GAME_H + 999;
                 b.y = -999;
                 updateHud();
+                checkLevelUp();
             }
         });
     });
