@@ -88,26 +88,34 @@
         #feedback.bad { color: #ff8f7a; }
         #funFact {
             position: absolute;
-            left: 14px; right: 14px; bottom: 96px;
-            background: rgba(10, 12, 34, 0.88);
-            border: 1px solid rgba(159, 216, 255, 0.55);
-            border-radius: 10px;
-            padding: 10px 14px;
+            left: 50%; bottom: 84px;
+            transform: translateX(-50%);
+            width: min(90%, 340px);
+            aspect-ratio: 751 / 461;
+            background-image: url('assets/ui/vault_panel.png');
+            background-size: 100% 100%;
+            background-repeat: no-repeat;
+            box-sizing: border-box;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 8% 12% 13% 10%;
             text-align: center;
             font-family: 'VaultUI', 'Courier New', Courier, monospace;
-            font-size: clamp(11.5px, 3.4vw, 14px);
-            line-height: 1.4;
+            font-size: clamp(10.5px, 3vw, 13px);
+            line-height: 1.35;
             letter-spacing: 0.3px;
-            color: #cdeaff;
+            color: #dff1ff;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.5);
             pointer-events: none;
             opacity: 0;
             transition: opacity 0.6s;
         }
         #funFact.show { opacity: 1; }
         #funFact.theme-l5 {
-            background: linear-gradient(135deg, rgba(19, 160, 75, 0.28), rgba(141, 102, 141, 0.32)), rgba(10, 12, 34, 0.88);
-            border-color: rgba(180, 140, 200, 0.65);
-            box-shadow: 0 0 14px rgba(19, 239, 75, 0.3), 0 0 12px rgba(180, 120, 200, 0.35);
+            background-image: linear-gradient(135deg, hsl(140, 65%, 42%), hsl(285, 45%, 45%)), url('assets/ui/vault_panel.png');
+            background-blend-mode: color;
+            background-size: 100% 100%, 100% 100%;
         }
         #levelUp {
             position: absolute;
