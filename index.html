@@ -13,6 +13,7 @@
         html {
             height: 100%;
             overscroll-behavior: none;
+            touch-action: none;
         }
         body {
             margin: 0;
@@ -42,6 +43,7 @@
             box-shadow: 0 0 20px rgba(0,0,0,0.8);
             background: #000;
             overflow: hidden;
+            touch-action: none;
         }
         canvas {
             display: block;
@@ -491,12 +493,12 @@ function shuffle(arr) {
     return arr;
 }
 
-// Quiz targets are tumbling chunks of wrecked-ship debris (cropped from the
-// old enemy ship art) rather than a whole enemy ship - less "you're fighting
-// a bad guy," more "here's some space junk floating by."
-const debrisImgs = [0, 1, 2].map(i => loadImage(`assets/hazards/debris/piece_${i}.png`));
-const ENEMY_DISPLAY_H = 58;
-let quizShips = [];
+// Quiz targets are actual meteors (the same rock art as the regular
+// hazards), not another little ship - just falling slower than usual and
+// carrying an answer label, so there's time to read all three and aim.
+const quizMeteorImgs = [0, 1, 2, 3, 4].map(i => loadImage(`assets/hazards/asteroid_${i}.png`));
+const QUIZ_METEOR_SIZE = 50;
+let quizMeteors = [];
 let questionQueue = [];
 let queuePos = 0;
 let waveEndAt = 0;   // 0 = no wave currently scheduled to start
@@ -519,25 +521,25 @@ function spawnQuizWave(retry) {
     quizBannerEl.textContent = currentQuestion.q;
     const options = shuffle(currentQuestion.choices.map((text, i) => ({ text, correct: i === currentQuestion.correct })));
     const slots = [GAME_W * 0.22, GAME_W * 0.5, GAME_W * 0.78];
-    quizShips = options.map((o, i) => ({
+    quizMeteors = options.map((o, i) => ({
         x: slots[i],
-        y: -ENEMY_DISPLAY_H - i * 55,
-        speed: 0.75 + Math.random() * 0.35,
+        y: -QUIZ_METEOR_SIZE - i * 55,
+        speed: 0.4 + Math.random() * 0.2,
         text: o.text,
         correct: o.correct,
         hit: false,
-        r: ENEMY_DISPLAY_H * 0.4,
-        img: debrisImgs[Math.floor(Math.random() * debrisImgs.length)],
+        r: QUIZ_METEOR_SIZE * 0.4,
+        img: quizMeteorImgs[Math.floor(Math.random() * quizMeteorImgs.length)],
         angle: Math.random() * Math.PI * 2,
         spin: (Math.random() - 0.5) * 0.03,
     }));
 }
 
-function updateQuizShips(dt) {
-    quizShips.forEach(s => { s.y += s.speed * (dt / 16); s.angle += s.spin * (dt / 16); });
-    const hadShips = quizShips.length > 0;
-    quizShips = quizShips.filter(s => s.y < GAME_H + ENEMY_DISPLAY_H + 60 && !s.hit);
-    if (hadShips && quizShips.length === 0 && waveEndAt === 0) {
+function updateQuizMeteors(dt) {
+    quizMeteors.forEach(s => { s.y += s.speed * (dt / 16); s.angle += s.spin * (dt / 16); });
+    const hadMeteors = quizMeteors.length > 0;
+    quizMeteors = quizMeteors.filter(s => s.y < GAME_H + QUIZ_METEOR_SIZE + 60 && !s.hit);
+    if (hadMeteors && quizMeteors.length === 0 && waveEndAt === 0) {
         // The whole wave drifted off-screen without the correct answer being
         // hit - give the same question another pass rather than moving on.
         waveEndAt = performance.now() + 900;
@@ -545,7 +547,7 @@ function updateQuizShips(dt) {
     }
 }
 function maybeSpawnQuizWave(time) {
-    if (quizShips.length === 0 && waveEndAt && time >= waveEndAt) {
+    if (quizMeteors.length === 0 && waveEndAt && time >= waveEndAt) {
         const retry = waveIsRetry;
         waveEndAt = 0;
         spawnQuizWave(retry);
@@ -580,14 +582,13 @@ function drawLabel(text, cx, topY, maxWidth) {
     });
     ctx.restore();
 }
-function drawQuizShips() {
-    quizShips.forEach(s => {
+function drawQuizMeteors() {
+    quizMeteors.forEach(s => {
         const img = s.img;
         if (!img.complete || !img.naturalWidth) return;
-        // Debris pieces have very different aspect ratios (a tall nose chunk
-        // vs. a wide tail chunk), so fit each within a box instead of always
-        // scaling by height - otherwise the wide pieces would blow up huge.
-        const scale = ENEMY_DISPLAY_H / Math.max(img.naturalWidth, img.naturalHeight);
+        // Rock art varies in aspect ratio, so fit each within a box instead
+        // of always scaling by height.
+        const scale = QUIZ_METEOR_SIZE / Math.max(img.naturalWidth, img.naturalHeight);
         const w = img.naturalWidth * scale, h = img.naturalHeight * scale;
         ctx.save();
         ctx.translate(s.x, s.y);
@@ -663,7 +664,7 @@ function resetGame() {
     asteroids = [];
     explosions = [];
     nextAsteroidAt = 0;
-    quizShips = [];
+    quizMeteors = [];
     buildQuestionQueue();
     currentQuestion = null;
     quizBannerEl.textContent = 'Get ready...';
@@ -702,18 +703,18 @@ function resolveCollisions(time) {
     // carrying the correct answer.
     bullets.forEach(b => {
         if (b.y < -900) return;
-        quizShips.forEach(s => {
+        quizMeteors.forEach(s => {
             if (s.hit) return;
             if (circleHit(b.x, b.y, 4, s.x, s.y, s.r)) {
                 s.hit = true;
                 b.y = -999;
-                spawnExplosion(s.x, s.y, ENEMY_DISPLAY_H);
+                spawnExplosion(s.x, s.y, QUIZ_METEOR_SIZE);
                 if (s.correct) {
                     score += 50;
                     correctCount += 1;
                     updateHud();
                     showFeedback('✓ Correct!', true);
-                    quizShips.forEach(other => { other.hit = true; }); // clear the rest of the wave
+                    quizMeteors.forEach(other => { other.hit = true; }); // clear the rest of the wave
                     if (correctCount % 3 === 0) {
                         // Round cleared - run a "Did you know" card as an
                         // intermission before the next round of questions.
@@ -799,6 +800,22 @@ fireBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); keys.fire =
 fireBtn.addEventListener('pointerup', (e) => { e.preventDefault(); keys.fire = false; });
 fireBtn.addEventListener('pointercancel', () => { keys.fire = false; });
 
+// Belt-and-suspenders against mobile browsers' double-tap-to-zoom and
+// pinch-zoom gestures - touch-action:none on the container should already
+// stop these, but iOS Safari in particular doesn't always honor that for
+// a fast double-tap (e.g. mashing the fire button and clipping the corner
+// just below it), and once it zooms in there's no way back out short of
+// reloading. Belt: block the 'gesturestart' Safari fires for pinch.
+// Suspenders: treat any two touchend events under 350ms apart as a
+// double-tap and swallow the second one before the browser can act on it.
+document.addEventListener('gesturestart', (e) => e.preventDefault());
+let lastTouchEnd = 0;
+document.addEventListener('touchend', (e) => {
+    const now = Date.now();
+    if (now - lastTouchEnd <= 350) e.preventDefault();
+    lastTouchEnd = now;
+}, { passive: false });
+
 gameOverEl.addEventListener('pointerdown', (e) => { e.preventDefault(); resetGame(); });
 winScreenEl.addEventListener('pointerdown', (e) => { e.preventDefault(); resetGame(); });
 
@@ -816,7 +833,7 @@ function render(time) {
     ctx.fillRect(0, 0, GAME_W, GAME_H);
     layers.forEach(drawLayer);
     drawAsteroids();
-    drawQuizShips();
+    drawQuizMeteors();
     drawBullets();
     drawPlayer();
     drawExplosions(time);
@@ -834,7 +851,7 @@ function loop(time) {
         if (keys.fire) tryFire(time);
         updateBullets(dt);
         updateAsteroids(dt, time);
-        updateQuizShips(dt);
+        updateQuizMeteors(dt);
         resolveCollisions(time);
         maybeSpawnQuizWave(time);
     }
