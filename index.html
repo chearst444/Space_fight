@@ -43,40 +43,80 @@
             image-rendering: pixelated;
             image-rendering: crisp-edges;
         }
-        #placeholder-note {
+        #hud {
             position: absolute;
-            left: 0;
-            right: 0;
-            bottom: 18px;
-            text-align: center;
-            font-size: clamp(11px, 3vw, 14px);
-            color: #9fd8ff;
+            top: 8px; left: 10px; right: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            font-size: clamp(12px, 3.4vw, 16px);
             text-shadow: 0 2px 4px #000;
-            padding: 0 12px;
             pointer-events: none;
         }
+        #lives { letter-spacing: 4px; }
+        #fireBtn {
+            position: absolute;
+            right: 16px; bottom: 22px;
+            width: 64px; height: 64px;
+            border-radius: 50%;
+            background: rgba(255,90,60,0.28);
+            border: 2px solid rgba(255,140,110,0.8);
+            color: #ffd9cc;
+            font-size: 11px;
+            display: flex; align-items: center; justify-content: center;
+            text-align: center;
+            touch-action: none;
+        }
+        #gameOver {
+            position: absolute;
+            inset: 0;
+            background: rgba(0,0,0,0.72);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            text-align: center;
+            padding: 0 20px;
+        }
+        #gameOver.hidden { display: none; }
+        #gameOver h2 { margin: 0; color: #ff6b5e; font-size: clamp(20px, 6vw, 30px); }
+        #gameOver p { margin: 0; color: #9fd8ff; font-size: clamp(12px, 3.6vw, 15px); }
     </style>
 </head>
 <body>
 <div id="game-container">
     <canvas id="gameCanvas" width="405" height="720"></canvas>
-    <div id="placeholder-note">Drag or arrow keys to fly &middot; keys 1-4 preview upgrade tiers &middot; enemies not in yet</div>
+    <div id="hud">
+        <div id="score">SCORE 0</div>
+        <div id="lives">&#9650;&#9650;&#9650;</div>
+    </div>
+    <div id="fireBtn">FIRE</div>
+    <div id="gameOver" class="hidden">
+        <h2>SHIP DESTROYED</h2>
+        <p id="finalScore"></p>
+        <p>Tap to restart</p>
+    </div>
 </div>
 
 <script>
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
+const scoreEl = document.getElementById('score');
+const livesEl = document.getElementById('lives');
+const gameOverEl = document.getElementById('gameOver');
+const finalScoreEl = document.getElementById('finalScore');
 
-// ---------- Parallax starfield background ----------
-// Four layers, all the same 1080x1920 canvas, stacked back to front:
-// nebula (opaque, slowest) -> planets -> asteroids -> sparkles (fastest).
-// Each scrolls straight down continuously and wraps seamlessly by
-// drawing two copies of itself one canvas-height apart.
-const layers = [];
-function loadLayer(src, speed) {
+function loadImage(src) {
     const img = new Image();
     img.src = src;
-    layers.push({ img, speed, y: 0 });
+    return img;
+}
+
+// ---------- Parallax starfield background ----------
+const layers = [];
+function loadLayer(src, speed) {
+    layers.push({ img: loadImage(src), speed, y: 0 });
 }
 loadLayer('assets/backgrounds/layer1_nebula.png', 0.15);
 loadLayer('assets/backgrounds/layer2_planets.png', 0.35);
@@ -86,89 +126,70 @@ loadLayer('assets/backgrounds/layer4_sparkles.png', 0.9);
 function drawLayer(layer) {
     const img = layer.img;
     if (!img.complete || !img.naturalWidth) return;
-
-    // Scale the source image to fill the canvas width, keep its aspect ratio.
     const scale = canvas.width / img.naturalWidth;
     const h = img.naturalHeight * scale;
-
     let y = layer.y % h;
     if (y > 0) y -= h;
     for (; y < canvas.height; y += h) {
         ctx.drawImage(img, 0, y, canvas.width, h);
     }
 }
-
-function updateLayers() {
-    layers.forEach(layer => { layer.y += layer.speed; });
+function updateLayers(dt) {
+    layers.forEach(layer => { layer.y += layer.speed * (dt / 16); });
 }
 
 // ---------- Player ship ----------
-// Four upgrade tiers - the ship's look changes as the player powers up.
-// Ordered by how armed/aggressive each design reads: 1 is the plain
-// starting hull, 4 is the heaviest (visible triple cannons on each wing).
-const SHIP_TIER_SRC = [
-    null, // tiers are 1-indexed to match the in-game upgrade count
-    'assets/ship/ship_tier1.png',
-    'assets/ship/ship_tier2.png',
-    'assets/ship/ship_tier3.png',
-    'assets/ship/ship_tier4.png',
-];
-const shipImages = SHIP_TIER_SRC.map(src => {
-    if (!src) return null;
-    const img = new Image();
-    img.src = src;
-    return img;
-});
-const SHIP_DISPLAY_HEIGHT = 68; // on-screen height in canvas px, same for every tier
+// Five upgrade tiers. Each tier's engine flame is baked into its own set of
+// composite frames (the hull is identical across a tier's frames - only the
+// flame length/style changes), so instead of overlaying a separate flame
+// sprite we just cycle the tier's own frame set and scale everything by the
+// tier's known hull height, keeping the ship's apparent size constant no
+// matter how long that tier's flame happens to be in a given frame.
+const TIER_COUNT = 5;
+const HULL_HEIGHT = [null, 860, 1683, 1070, 950, 971]; // 1-indexed, from each tier's standalone art
+const TIER_FRAME_COUNTS = [null, 5, 4, 5, 5, 5];
+
+const tierFrames = [null];
+for (let t = 1; t <= TIER_COUNT; t++) {
+    const frames = [];
+    for (let i = 0; i < TIER_FRAME_COUNTS[t]; i++) {
+        frames.push(loadImage(`assets/ship/tier${t}/frame_${i}.png`));
+    }
+    tierFrames.push(frames);
+}
+
+const SHIP_DISPLAY_HEIGHT = 68; // on-screen hull height in canvas px, same for every tier
 
 const player = {
     x: canvas.width / 2,
     y: canvas.height - 110,
     tier: 1,
-    speed: 4.5, // px/frame for keyboard movement
+    speed: 4.5,
+    invulnUntil: 0,
 };
 
-// Engine flame: a 5-frame flicker (cropped from a full ship+flame
-// composite you sent, keeping just the part that actually changed
-// between frames) drawn behind whichever ship tier is active, so it
-// works the same regardless of tier instead of being baked into one.
-const FLAME_FRAME_COUNT = 5;
-const flameImages = Array.from({ length: FLAME_FRAME_COUNT }, (_, i) => {
-    const img = new Image();
-    img.src = `assets/ship/flame_${i}.png`;
-    return img;
-});
-const FLAME_DISPLAY_HEIGHT = 46;
-const FLAME_FRAME_MS = 70; // how long each flicker frame holds
+const FLAME_FRAME_MS = 70;
 let flameFrame = 0;
 let flameTimer = 0;
-
 function updateFlame(dt) {
     flameTimer += dt;
+    const count = TIER_FRAME_COUNTS[player.tier];
     while (flameTimer >= FLAME_FRAME_MS) {
         flameTimer -= FLAME_FRAME_MS;
-        flameFrame = (flameFrame + 1) % FLAME_FRAME_COUNT;
+        flameFrame = (flameFrame + 1) % count;
     }
 }
 
-function drawFlame() {
-    const img = flameImages[flameFrame];
-    if (!img || !img.complete || !img.naturalWidth) return;
-    const scale = FLAME_DISPLAY_HEIGHT / img.naturalHeight;
-    const w = img.naturalWidth * scale;
-    const h = FLAME_DISPLAY_HEIGHT;
-    const overlap = 6; // tucks the flame's top up into the ship's nozzle
-    const topY = player.y + SHIP_DISPLAY_HEIGHT / 2 - overlap;
-    ctx.drawImage(img, player.x - w / 2, topY, w, h);
-}
-
 function drawPlayer() {
-    const img = shipImages[player.tier];
+    const frames = tierFrames[player.tier];
+    const img = frames[flameFrame % frames.length];
     if (!img || !img.complete || !img.naturalWidth) return;
-    const scale = SHIP_DISPLAY_HEIGHT / img.naturalHeight;
+    // Blink while invulnerable after taking a hit.
+    if (player.invulnUntil > performance.now() && Math.floor(performance.now() / 100) % 2 === 0) return;
+    const scale = SHIP_DISPLAY_HEIGHT / HULL_HEIGHT[player.tier];
     const w = img.naturalWidth * scale;
-    const h = SHIP_DISPLAY_HEIGHT;
-    ctx.drawImage(img, player.x - w / 2, player.y - h / 2, w, h);
+    const h = img.naturalHeight * scale;
+    ctx.drawImage(img, player.x - w / 2, player.y - SHIP_DISPLAY_HEIGHT / 2, w, h);
 }
 
 function clampPlayer() {
@@ -177,22 +198,236 @@ function clampPlayer() {
     player.y = Math.min(canvas.height - half, Math.max(half, player.y));
 }
 
-// Keyboard: arrows or WASD to fly, 1-4 to preview an upgrade tier (a
-// stand-in for real power-up pickups, which aren't built yet).
-const keys = { up: false, down: false, left: false, right: false };
+// ---------- Bullets ----------
+const bulletImg = loadImage('assets/fx/unused_layers/6b1e0621.png');
+const BULLET_W = 10, BULLET_H = 26, BULLET_SPEED = 9;
+let bullets = [];
+let lastShot = 0;
+const FIRE_COOLDOWN_MS = 240;
+
+function tryFire(time) {
+    if (time - lastShot < FIRE_COOLDOWN_MS) return;
+    lastShot = time;
+    bullets.push({ x: player.x, y: player.y - SHIP_DISPLAY_HEIGHT / 2 });
+}
+function updateBullets(dt) {
+    bullets.forEach(b => { b.y -= BULLET_SPEED * (dt / 16); });
+    bullets = bullets.filter(b => b.y > -BULLET_H);
+}
+function drawBullets() {
+    bullets.forEach(b => {
+        ctx.drawImage(bulletImg, b.x - BULLET_W / 2, b.y - BULLET_H / 2, BULLET_W, BULLET_H);
+    });
+}
+
+// ---------- Asteroids (dodgeable hazards) ----------
+const asteroidImgs = [0, 1, 2, 3, 4].map(i => loadImage(`assets/hazards/asteroid_${i}.png`));
+const ASTEROID_DISPLAY = 46;
+let asteroids = [];
+let nextAsteroidAt = 0;
+
+function spawnAsteroid(time) {
+    const img = asteroidImgs[Math.floor(Math.random() * asteroidImgs.length)];
+    asteroids.push({
+        img,
+        x: ASTEROID_DISPLAY / 2 + Math.random() * (canvas.width - ASTEROID_DISPLAY),
+        y: -ASTEROID_DISPLAY,
+        speed: 2 + Math.random() * 1.8,
+        spin: (Math.random() - 0.5) * 0.04,
+        angle: 0,
+        r: ASTEROID_DISPLAY * 0.4,
+    });
+    nextAsteroidAt = time + 900 + Math.random() * 900;
+}
+function updateAsteroids(dt, time) {
+    if (time > nextAsteroidAt) spawnAsteroid(time);
+    asteroids.forEach(a => { a.y += a.speed * (dt / 16); a.angle += a.spin * (dt / 16); });
+    asteroids = asteroids.filter(a => a.y < canvas.height + ASTEROID_DISPLAY);
+}
+function drawAsteroids() {
+    asteroids.forEach(a => {
+        const img = a.img;
+        if (!img.complete || !img.naturalWidth) return;
+        const scale = ASTEROID_DISPLAY / Math.max(img.naturalWidth, img.naturalHeight);
+        const w = img.naturalWidth * scale, h = img.naturalHeight * scale;
+        ctx.save();
+        ctx.translate(a.x, a.y);
+        ctx.rotate(a.angle);
+        ctx.drawImage(img, -w / 2, -h / 2, w, h);
+        ctx.restore();
+    });
+}
+
+// ---------- Enemy ships ----------
+const enemyHealthyImg = loadImage('assets/enemy/enemy_ship.png');
+const enemyDamagedImg = loadImage('assets/enemy/enemy_ship_damaged.png');
+const ENEMY_DISPLAY_H = 58;
+let enemies = [];
+let nextEnemyAt = 2000;
+
+function spawnEnemy(time) {
+    enemies.push({
+        x: 40 + Math.random() * (canvas.width - 80),
+        y: -ENEMY_DISPLAY_H,
+        speed: 1.4 + Math.random() * 0.8,
+        hp: 2,
+        r: ENEMY_DISPLAY_H * 0.38,
+    });
+    nextEnemyAt = time + 2600 + Math.random() * 1800;
+}
+function updateEnemies(dt, time) {
+    if (time > nextEnemyAt) spawnEnemy(time);
+    enemies.forEach(e => { e.y += e.speed * (dt / 16); });
+    enemies = enemies.filter(e => e.y < canvas.height + ENEMY_DISPLAY_H);
+}
+function drawEnemies() {
+    enemies.forEach(e => {
+        const img = e.hp > 1 ? enemyHealthyImg : enemyDamagedImg;
+        if (!img.complete || !img.naturalWidth) return;
+        const scale = ENEMY_DISPLAY_H / img.naturalHeight;
+        const w = img.naturalWidth * scale, h = ENEMY_DISPLAY_H;
+        ctx.drawImage(img, e.x - w / 2, e.y - h / 2, w, h);
+    });
+}
+
+// ---------- Explosions (brief effect on hit/kill) ----------
+const explosionImg = loadImage('assets/fx/explosion.png');
+let explosions = [];
+function spawnExplosion(x, y, size) {
+    explosions.push({ x, y, size, until: performance.now() + 220 });
+}
+function drawExplosions(time) {
+    explosions = explosions.filter(e => e.until > time);
+    explosions.forEach(e => {
+        const t = 1 - (e.until - time) / 220;
+        const s = e.size * (0.6 + t * 0.8);
+        ctx.globalAlpha = 1 - t;
+        ctx.drawImage(explosionImg, e.x - s / 2, e.y - s / 2, s, s);
+        ctx.globalAlpha = 1;
+    });
+}
+
+// ---------- Score / lives / game state ----------
+let score = 0;
+let lives = 3;
+let gameOver = false;
+function updateHud() {
+    scoreEl.textContent = 'SCORE ' + score;
+    livesEl.textContent = '▲'.repeat(Math.max(0, lives));
+}
+
+function loseLife(time) {
+    if (player.invulnUntil > time) return;
+    lives -= 1;
+    player.invulnUntil = time + 1500;
+    updateHud();
+    if (lives <= 0) {
+        gameOver = true;
+        finalScoreEl.textContent = 'Score: ' + score;
+        gameOverEl.classList.remove('hidden');
+    }
+}
+
+function resetGame() {
+    score = 0;
+    lives = 3;
+    gameOver = false;
+    player.x = canvas.width / 2;
+    player.y = canvas.height - 110;
+    player.tier = 1;
+    player.invulnUntil = 0;
+    bullets = [];
+    asteroids = [];
+    enemies = [];
+    explosions = [];
+    nextAsteroidAt = 0;
+    nextEnemyAt = performance.now() + 2000;
+    updateHud();
+    gameOverEl.classList.add('hidden');
+}
+
+function circleHit(ax, ay, ar, bx, by, br) {
+    const dx = ax - bx, dy = ay - by;
+    return dx * dx + dy * dy < (ar + br) * (ar + br);
+}
+
+function resolveCollisions(time) {
+    const playerR = SHIP_DISPLAY_HEIGHT * 0.32;
+
+    // Player vs asteroids
+    asteroids.forEach(a => {
+        if (circleHit(player.x, player.y, playerR, a.x, a.y, a.r)) {
+            loseLife(time);
+            spawnExplosion(a.x, a.y, ASTEROID_DISPLAY);
+            a.y = canvas.height + 999; // remove next filter pass
+        }
+    });
+
+    // Player vs enemies
+    enemies.forEach(e => {
+        if (circleHit(player.x, player.y, playerR, e.x, e.y, e.r)) {
+            loseLife(time);
+            spawnExplosion(e.x, e.y, ENEMY_DISPLAY_H);
+            e.y = canvas.height + 999;
+        }
+    });
+
+    // Bullets vs enemies
+    bullets.forEach(b => {
+        enemies.forEach(e => {
+            if (e.hp <= 0) return;
+            if (circleHit(b.x, b.y, 4, e.x, e.y, e.r)) {
+                e.hp -= 1;
+                b.y = -999; // consume bullet
+                if (e.hp <= 0) {
+                    score += 25;
+                    spawnExplosion(e.x, e.y, ENEMY_DISPLAY_H);
+                    e.y = canvas.height + 999;
+                } else {
+                    spawnExplosion(e.x, e.y, ENEMY_DISPLAY_H * 0.6);
+                }
+                updateHud();
+            }
+        });
+    });
+
+    // Bullets vs asteroids (asteroids just get blasted away for points too)
+    bullets.forEach(b => {
+        asteroids.forEach(a => {
+            if (circleHit(b.x, b.y, 4, a.x, a.y, a.r)) {
+                score += 10;
+                spawnExplosion(a.x, a.y, ASTEROID_DISPLAY);
+                a.y = canvas.height + 999;
+                b.y = -999;
+                updateHud();
+            }
+        });
+    });
+
+    bullets = bullets.filter(b => b.y > -999);
+    enemies = enemies.filter(e => e.y < canvas.height + 900);
+    asteroids = asteroids.filter(a => a.y < canvas.height + 900);
+}
+
+// ---------- Input ----------
+// Keyboard: arrows or WASD to fly, space to fire, 1-5 to preview a tier
+// (a stand-in for real power-up pickups, which aren't built yet).
+const keys = { up: false, down: false, left: false, right: false, fire: false };
 window.addEventListener('keydown', (e) => {
     if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
     if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') keys.up = true;
     if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') keys.down = true;
     if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') keys.left = true;
     if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keys.right = true;
-    if (['1','2','3','4'].includes(e.key)) player.tier = parseInt(e.key, 10);
+    if (e.key === ' ') keys.fire = true;
+    if (['1','2','3','4','5'].includes(e.key)) { player.tier = parseInt(e.key, 10); flameFrame = 0; }
 });
 window.addEventListener('keyup', (e) => {
     if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') keys.up = false;
     if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') keys.down = false;
     if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') keys.left = false;
     if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keys.right = false;
+    if (e.key === ' ') keys.fire = false;
 });
 
 // Touch/mouse: drag anywhere on the canvas to fly the ship straight to
@@ -217,32 +452,52 @@ canvas.addEventListener('pointermove', (e) => {
 });
 window.addEventListener('pointerup', () => { dragging = false; });
 
-function updatePlayer() {
-    if (keys.up) player.y -= player.speed;
-    if (keys.down) player.y += player.speed;
-    if (keys.left) player.x -= player.speed;
-    if (keys.right) player.x += player.speed;
+const fireBtn = document.getElementById('fireBtn');
+fireBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); keys.fire = true; });
+fireBtn.addEventListener('pointerup', (e) => { e.preventDefault(); keys.fire = false; });
+fireBtn.addEventListener('pointercancel', () => { keys.fire = false; });
+
+gameOverEl.addEventListener('pointerdown', (e) => { e.preventDefault(); resetGame(); });
+
+function updatePlayer(dt) {
+    const move = player.speed * (dt / 16);
+    if (keys.up) player.y -= move;
+    if (keys.down) player.y += move;
+    if (keys.left) player.x -= move;
+    if (keys.right) player.x += move;
     clampPlayer();
 }
 
-function render() {
+function render(time) {
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     layers.forEach(drawLayer);
-    drawFlame(); // behind the ship, so it reads as coming out of the nozzle
+    drawAsteroids();
+    drawEnemies();
+    drawBullets();
     drawPlayer();
+    drawExplosions(time);
 }
 
 let lastTime = 0;
 function loop(time) {
-    const dt = lastTime ? time - lastTime : 16;
+    const dt = lastTime ? Math.min(time - lastTime, 48) : 16;
     lastTime = time;
-    updateLayers();
-    updatePlayer();
-    updateFlame(dt);
-    render();
+
+    if (!gameOver) {
+        updateLayers(dt);
+        updatePlayer(dt);
+        updateFlame(dt);
+        if (keys.fire) tryFire(time);
+        updateBullets(dt);
+        updateAsteroids(dt, time);
+        updateEnemies(dt, time);
+        resolveCollisions(time);
+    }
+    render(time);
     requestAnimationFrame(loop);
 }
+updateHud();
 requestAnimationFrame(loop);
 </script>
 </body>
