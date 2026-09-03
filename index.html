@@ -170,6 +170,66 @@
             text-shadow: 0 0 14px rgba(255, 210, 90, 0.7);
         }
         #winScreen p { margin: 0; color: #9fffc0; font-size: clamp(12px, 3.6vw, 15px); }
+        #startScreen {
+            position: absolute;
+            inset: 0;
+            z-index: 40;
+            background: #000;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 4%;
+            padding: 6% 6% 8%;
+            box-sizing: border-box;
+            text-align: center;
+        }
+        #startScreen.hidden { display: none; }
+        #startTitle {
+            margin: 0;
+            color: #fff;
+            font-family: 'VaultUI', 'Courier New', Courier, monospace;
+            font-size: clamp(28px, 9vw, 40px);
+            letter-spacing: 1px;
+            line-height: 1.15;
+            text-shadow: 0 0 16px rgba(120, 190, 255, 0.6);
+        }
+        #startPanel {
+            width: min(88%, 320px);
+            aspect-ratio: 940 / 1080;
+            background-image: url('assets/ui/start_panel.png');
+            background-size: 100% 100%;
+            background-repeat: no-repeat;
+            box-sizing: border-box;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 22% 14% 10%;
+        }
+        #startInstructions {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            text-align: left;
+        }
+        #startInstructions li {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: #fff;
+            font-size: clamp(11px, 3.1vw, 13.5px);
+            line-height: 1.35;
+        }
+        #startInstructions img { width: 20px; height: auto; flex: none; }
+        #playBtn {
+            width: 78px;
+            height: 78px;
+            cursor: pointer;
+            touch-action: none;
+        }
     </style>
 </head>
 <body>
@@ -193,6 +253,17 @@
         <h2>YOU WIN!</h2>
         <p id="winFinalScore"></p>
         <p>Tap to play again</p>
+    </div>
+    <div id="startScreen">
+        <h1 id="startTitle">METEORITIC MIND</h1>
+        <div id="startPanel">
+            <ul id="startInstructions">
+                <li><img src="assets/ui/star_gray.png" alt="">You're a rocket ship hunting knowledge - shoot the meteor carrying the right answer.</li>
+                <li><img src="assets/ui/star_gold.png" alt="">Avoid being hit by meteors or falling debris - you've got three lives.</li>
+                <li><img src="assets/ui/star_blue.png" alt="">Shoot a health heart for a chance to repair damage and get a life back.</li>
+            </ul>
+        </div>
+        <img id="playBtn" src="assets/ui/play_button.png" alt="Play">
     </div>
 </div>
 
@@ -218,6 +289,9 @@ const gameOverEl = document.getElementById('gameOver');
 const finalScoreEl = document.getElementById('finalScore');
 const winScreenEl = document.getElementById('winScreen');
 const winFinalScoreEl = document.getElementById('winFinalScore');
+const startScreenEl = document.getElementById('startScreen');
+const playBtnEl = document.getElementById('playBtn');
+let gameStarted = false;
 const quizBannerEl = document.getElementById('quizBanner');
 const feedbackEl = document.getElementById('feedback');
 const funFactEl = document.getElementById('funFact');
@@ -423,6 +497,53 @@ function drawAsteroids() {
         ctx.translate(a.x, a.y);
         ctx.rotate(a.angle);
         ctx.drawImage(img, -w / 2, -h / 2, w, h);
+        ctx.restore();
+    });
+}
+
+// ---------- Health hearts (rare, shoot one for a repair) ----------
+// Strictly rate-limited to one every 60 seconds - this is a lifeline, not
+// another thing to farm for points.
+const HEART_SIZE = 38;
+const HEART_INTERVAL_MS = 60000;
+let hearts = [];
+let nextHeartAt = 0;
+
+function spawnHeart(time) {
+    hearts.push({
+        x: HEART_SIZE / 2 + Math.random() * (GAME_W - HEART_SIZE),
+        y: -HEART_SIZE,
+        speed: 1.4 + Math.random() * 0.5,
+        r: HEART_SIZE * 0.42,
+    });
+    nextHeartAt = time + HEART_INTERVAL_MS;
+}
+function updateHearts(dt, time) {
+    if (time > nextHeartAt) spawnHeart(time);
+    hearts.forEach(h => { h.y += h.speed * (dt / 16); });
+    hearts = hearts.filter(h => h.y < GAME_H + HEART_SIZE);
+}
+function heartPath(cx, cy, size) {
+    const s = size / 16;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy + 3 * s);
+    ctx.bezierCurveTo(cx, cy + 2 * s, cx - 2 * s, cy, cx - 5 * s, cy);
+    ctx.bezierCurveTo(cx - 9 * s, cy, cx - 9 * s, cy + 4.5 * s, cx - 9 * s, cy + 4.5 * s);
+    ctx.bezierCurveTo(cx - 9 * s, cy + 7 * s, cx - 6 * s, cy + 10 * s, cx, cy + 15 * s);
+    ctx.bezierCurveTo(cx + 6 * s, cy + 10 * s, cx + 9 * s, cy + 7 * s, cx + 9 * s, cy + 4.5 * s);
+    ctx.bezierCurveTo(cx + 9 * s, cy + 4.5 * s, cx + 9 * s, cy, cx + 5 * s, cy);
+    ctx.bezierCurveTo(cx + 2 * s, cy, cx, cy + 2 * s, cx, cy + 3 * s);
+    ctx.closePath();
+}
+function drawHearts() {
+    hearts.forEach(h => {
+        ctx.save();
+        heartPath(h.x, h.y - HEART_SIZE * 0.47, HEART_SIZE);
+        ctx.fillStyle = '#ff4d6d';
+        ctx.fill();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#8a0f2c';
+        ctx.stroke();
         ctx.restore();
     });
 }
@@ -637,7 +758,7 @@ let lives = 3;
 let gameOver = false;
 function updateHud() {
     scoreEl.textContent = `SCORE ${score} · LV${player.level}`;
-    livesEl.textContent = '▲'.repeat(Math.max(0, lives));
+    livesEl.textContent = '❤'.repeat(Math.max(0, lives));
 }
 
 function loseLife(time) {
@@ -669,6 +790,8 @@ function resetGame() {
     asteroids = [];
     explosions = [];
     nextAsteroidAt = 0;
+    hearts = [];
+    nextHeartAt = performance.now() + 25000;
     quizMeteors = [];
     buildQuestionQueue();
     currentQuestion = null;
@@ -685,6 +808,7 @@ function resetGame() {
     updateHud();
     gameOverEl.classList.add('hidden');
     winScreenEl.classList.add('hidden');
+    gameStarted = true;
 }
 
 function circleHit(ax, ay, ar, bx, by, br) {
@@ -753,8 +877,25 @@ function resolveCollisions(time) {
         });
     });
 
+    // Bullets vs health hearts - shoot one for a repair, up to full health.
+    bullets.forEach(b => {
+        hearts.forEach(h => {
+            if (circleHit(b.x, b.y, 4, h.x, h.y, h.r)) {
+                b.y = -999;
+                spawnExplosion(h.x, h.y, HEART_SIZE);
+                h.y = GAME_H + 999;
+                if (lives < 3) {
+                    lives += 1;
+                    updateHud();
+                }
+                showFeedback('❤ Repaired!', true);
+            }
+        });
+    });
+
     bullets = bullets.filter(b => b.y > -999);
     asteroids = asteroids.filter(a => a.y < GAME_H + 900);
+    hearts = hearts.filter(h => h.y < GAME_H + 900);
 }
 
 // ---------- Input ----------
@@ -823,6 +964,11 @@ document.addEventListener('touchend', (e) => {
 
 gameOverEl.addEventListener('pointerdown', (e) => { e.preventDefault(); resetGame(); });
 winScreenEl.addEventListener('pointerdown', (e) => { e.preventDefault(); resetGame(); });
+playBtnEl.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    startScreenEl.classList.add('hidden');
+    resetGame();
+});
 
 function updatePlayer(dt) {
     const move = player.speed * (dt / 16);
@@ -839,6 +985,7 @@ function render(time) {
     layers.forEach(drawLayer);
     drawAsteroids();
     drawQuizMeteors();
+    drawHearts();
     drawBullets();
     drawPlayer();
     drawExplosions(time);
@@ -849,7 +996,7 @@ function loop(time) {
     const dt = lastTime ? Math.min(time - lastTime, 48) : 16;
     lastTime = time;
 
-    if (!gameOver) {
+    if (gameStarted && !gameOver) {
         updateLayers(dt);
         updatePlayer(dt);
         updateFlame(dt);
@@ -857,6 +1004,7 @@ function loop(time) {
         updateBullets(dt);
         updateAsteroids(dt, time);
         updateQuizMeteors(dt);
+        updateHearts(dt, time);
         resolveCollisions(time);
         maybeSpawnQuizWave(time);
     }
