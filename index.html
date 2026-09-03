@@ -99,16 +99,20 @@
             pointer-events: none;
             z-index: 30;
         }
+        #funFactWrap.show { pointer-events: auto; }
         #funFact {
             position: absolute;
             inset: 0;
             background: radial-gradient(ellipse at 50% 40%, #131a3d 0%, #05060f 75%);
             display: flex;
+            flex-direction: column;
             align-items: center;
             justify-content: center;
+            gap: 22px;
             padding: 15%;
             box-sizing: border-box;
             text-align: center;
+            cursor: pointer;
             font-family: 'VaultUI', 'Courier New', Courier, monospace;
             font-size: clamp(19px, 5.6vw, 25px);
             line-height: 1.45;
@@ -120,6 +124,13 @@
             transition: transform 0.5s ease, opacity 0.3s ease;
         }
         #funFactWrap.show #funFact { transform: rotateY(0deg); opacity: 1; }
+        #funFactHint {
+            font-size: clamp(11px, 3.2vw, 13px);
+            color: #7fa8cc;
+            letter-spacing: 1px;
+            animation: factHintPulse 1.6s ease-in-out infinite;
+        }
+        @keyframes factHintPulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
         #funFact.theme-l5 {
             background: radial-gradient(ellipse at 50% 40%, hsl(140, 55%, 16%) 0%, hsl(285, 40%, 10%) 75%);
         }
@@ -242,7 +253,7 @@
     <div id="quizBanner">Get ready...</div>
     <div id="feedback" class="hidden"></div>
     <div id="levelUp" class="hidden"></div>
-    <div id="funFactWrap"><div id="funFact"></div></div>
+    <div id="funFactWrap"><div id="funFact"><span id="funFactText"></span><span id="funFactHint">TAP TO CONTINUE</span></div></div>
     <div id="fireBtn">FIRE</div>
     <div id="gameOver" class="hidden">
         <h2>SHIP DESTROYED</h2>
@@ -296,6 +307,7 @@ const quizBannerEl = document.getElementById('quizBanner');
 const feedbackEl = document.getElementById('feedback');
 const funFactEl = document.getElementById('funFact');
 const funFactWrapEl = document.getElementById('funFactWrap');
+const funFactTextEl = document.getElementById('funFactText');
 const levelUpEl = document.getElementById('levelUp');
 
 function loadImage(src) {
@@ -393,8 +405,6 @@ function checkLevelUp() {
     funFactEl.classList.toggle('theme-l5', newLevel === 5);
 
     showDidYouKnow();
-    waveEndAt = Math.max(waveEndAt, performance.now() + 5200);
-    waveIsRetry = false;
 }
 
 function checkWin() {
@@ -598,18 +608,25 @@ const DID_YOU_KNOW = [
 ];
 let factQueue = [];
 let factPos = 0;
-let funFactHideTimer = null;
 function buildFactQueue() {
     factQueue = shuffle(DID_YOU_KNOW.map((_, i) => i));
     factPos = 0;
 }
 function showDidYouKnow() {
     if (factPos >= factQueue.length) buildFactQueue();
-    funFactEl.textContent = DID_YOU_KNOW[factQueue[factPos++]];
+    funFactTextEl.textContent = DID_YOU_KNOW[factQueue[factPos++]];
     funFactWrapEl.classList.add('show');
-    clearTimeout(funFactHideTimer);
-    funFactHideTimer = setTimeout(() => funFactWrapEl.classList.remove('show'), 4800);
+    waveEndAt = Infinity; // hold the next quiz wave until the card is dismissed
 }
+// The card stays up until tapped - dismissing it is what lets the next
+// quiz round (or the paused action after a level-up) actually resume.
+function dismissDidYouKnow() {
+    if (!funFactWrapEl.classList.contains('show')) return;
+    funFactWrapEl.classList.remove('show');
+    waveEndAt = performance.now() + 400;
+    waveIsRetry = false;
+}
+funFactEl.addEventListener('pointerdown', (e) => { e.preventDefault(); dismissDidYouKnow(); });
 
 function shuffle(arr) {
     for (let i = arr.length - 1; i > 0; i--) {
@@ -804,7 +821,6 @@ function resetGame() {
     buildFactQueue();
     funFactWrapEl.classList.remove('show');
     funFactEl.classList.remove('theme-l5');
-    clearTimeout(funFactHideTimer);
     updateHud();
     gameOverEl.classList.add('hidden');
     winScreenEl.classList.add('hidden');
@@ -848,11 +864,10 @@ function resolveCollisions(time) {
                         // Round cleared - run a "Did you know" card as an
                         // intermission before the next round of questions.
                         showDidYouKnow();
-                        waveEndAt = performance.now() + 5200;
                     } else {
                         waveEndAt = performance.now() + 1400;
+                        waveIsRetry = false;
                     }
-                    waveIsRetry = false;
                     checkLevelUp();
                     checkWin();
                 } else {
