@@ -94,8 +94,8 @@
             transform: translateX(-50%);
             width: min(90%, 340px);
             aspect-ratio: 751 / 461;
-            background-image: url('assets/ui/vault_panel.png');
-            background-size: 100% 100%;
+            background-image: linear-gradient(rgba(0,0,0,0.55), rgba(0,0,0,0.55)), url('assets/ui/vault_panel.png');
+            background-size: 100% 100%, 100% 100%;
             background-repeat: no-repeat;
             box-sizing: border-box;
             display: flex;
@@ -115,9 +115,12 @@
         }
         #funFact.show { opacity: 1; }
         #funFact.theme-l5 {
-            background-image: linear-gradient(135deg, hsl(140, 65%, 42%), hsl(285, 45%, 45%)), url('assets/ui/vault_panel.png');
-            background-blend-mode: color;
-            background-size: 100% 100%, 100% 100%;
+            background-image:
+                linear-gradient(rgba(0,0,0,0.55), rgba(0,0,0,0.55)),
+                linear-gradient(135deg, hsl(140, 65%, 42%), hsl(285, 45%, 45%)),
+                url('assets/ui/vault_panel.png');
+            background-blend-mode: normal, color;
+            background-size: 100% 100%, 100% 100%, 100% 100%;
         }
         #levelUp {
             position: absolute;
