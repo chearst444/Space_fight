@@ -514,7 +514,8 @@ function drawAsteroids() {
 // ---------- Health hearts (rare, shoot one for a repair) ----------
 // Strictly rate-limited to one every 60 seconds - this is a lifeline, not
 // another thing to farm for points.
-const HEART_SIZE = 38;
+const heartImg = loadImage('assets/ui/heart.png');
+const HEART_SIZE = 40;
 const HEART_INTERVAL_MS = 60000;
 let hearts = [];
 let nextHeartAt = 0;
@@ -533,28 +534,12 @@ function updateHearts(dt, time) {
     hearts.forEach(h => { h.y += h.speed * (dt / 16); });
     hearts = hearts.filter(h => h.y < GAME_H + HEART_SIZE);
 }
-function heartPath(cx, cy, size) {
-    const s = size / 16;
-    ctx.beginPath();
-    ctx.moveTo(cx, cy + 3 * s);
-    ctx.bezierCurveTo(cx, cy + 2 * s, cx - 2 * s, cy, cx - 5 * s, cy);
-    ctx.bezierCurveTo(cx - 9 * s, cy, cx - 9 * s, cy + 4.5 * s, cx - 9 * s, cy + 4.5 * s);
-    ctx.bezierCurveTo(cx - 9 * s, cy + 7 * s, cx - 6 * s, cy + 10 * s, cx, cy + 15 * s);
-    ctx.bezierCurveTo(cx + 6 * s, cy + 10 * s, cx + 9 * s, cy + 7 * s, cx + 9 * s, cy + 4.5 * s);
-    ctx.bezierCurveTo(cx + 9 * s, cy + 4.5 * s, cx + 9 * s, cy, cx + 5 * s, cy);
-    ctx.bezierCurveTo(cx + 2 * s, cy, cx, cy + 2 * s, cx, cy + 3 * s);
-    ctx.closePath();
-}
 function drawHearts() {
+    if (!heartImg.complete || !heartImg.naturalWidth) return;
+    const scale = HEART_SIZE / Math.max(heartImg.naturalWidth, heartImg.naturalHeight);
+    const w = heartImg.naturalWidth * scale, h2 = heartImg.naturalHeight * scale;
     hearts.forEach(h => {
-        ctx.save();
-        heartPath(h.x, h.y - HEART_SIZE * 0.47, HEART_SIZE);
-        ctx.fillStyle = '#ff4d6d';
-        ctx.fill();
-        ctx.lineWidth = 2;
-        ctx.strokeStyle = '#8a0f2c';
-        ctx.stroke();
-        ctx.restore();
+        ctx.drawImage(heartImg, h.x - w / 2, h.y - h2 / 2, w, h2);
     });
 }
 
