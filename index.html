@@ -55,6 +55,29 @@
             pointer-events: none;
         }
         #lives { letter-spacing: 4px; }
+        #quizBanner {
+            position: absolute;
+            top: 34px; left: 10px; right: 10px;
+            text-align: center;
+            font-size: clamp(12px, 3.6vw, 16px);
+            line-height: 1.3;
+            color: #fff9d6;
+            text-shadow: 0 2px 4px #000;
+            pointer-events: none;
+        }
+        #feedback {
+            position: absolute;
+            top: 84px; left: 0; right: 0;
+            text-align: center;
+            font-size: clamp(14px, 4.4vw, 19px);
+            font-weight: bold;
+            text-shadow: 0 2px 4px #000;
+            pointer-events: none;
+            transition: opacity 0.25s;
+        }
+        #feedback.hidden { opacity: 0; }
+        #feedback.good { color: #7CFC9A; }
+        #feedback.bad { color: #ff8f7a; }
         #fireBtn {
             position: absolute;
             right: 16px; bottom: 22px;
@@ -92,6 +115,8 @@
         <div id="score">SCORE 0</div>
         <div id="lives">&#9650;&#9650;&#9650;</div>
     </div>
+    <div id="quizBanner">Get ready...</div>
+    <div id="feedback" class="hidden"></div>
     <div id="fireBtn">FIRE</div>
     <div id="gameOver" class="hidden">
         <h2>SHIP DESTROYED</h2>
@@ -120,6 +145,8 @@ const scoreEl = document.getElementById('score');
 const livesEl = document.getElementById('lives');
 const gameOverEl = document.getElementById('gameOver');
 const finalScoreEl = document.getElementById('finalScore');
+const quizBannerEl = document.getElementById('quizBanner');
+const feedbackEl = document.getElementById('feedback');
 
 function loadImage(src) {
     const img = new Image();
@@ -272,36 +299,139 @@ function drawAsteroids() {
     });
 }
 
-// ---------- Enemy ships ----------
-const enemyHealthyImg = loadImage('assets/enemy/enemy_ship.png');
-const enemyDamagedImg = loadImage('assets/enemy/enemy_ship_damaged.png');
-const ENEMY_DISPLAY_H = 58;
-let enemies = [];
-let nextEnemyAt = 2000;
+// ---------- Quiz ships (the educational core: shoot the right answer) ----------
+// Space-fact questions for upper-elementary players (ages ~9-11). Each has
+// exactly one correct choice among 3; a wave spawns one ship per choice and
+// the player has to read them and shoot the right one.
+const QUESTIONS = [
+    { q: 'Which planet is known as the Red Planet?', choices: ['Mars', 'Venus', 'Jupiter'], correct: 0 },
+    { q: 'Which planet is closest to the Sun?', choices: ['Earth', 'Mercury', 'Saturn'], correct: 1 },
+    { q: 'What is the largest planet in our solar system?', choices: ['Earth', 'Mars', 'Jupiter'], correct: 2 },
+    { q: 'What galaxy is Earth in?', choices: ['Milky Way', 'Andromeda', 'Sombrero'], correct: 0 },
+    { q: 'What do we call a rocky object that orbits the Sun?', choices: ['Asteroid', 'Comet', 'Moon'], correct: 0 },
+    { q: 'What is the closest star to Earth?', choices: ['Polaris', 'The Sun', 'Proxima b'], correct: 1 },
+    { q: 'How many planets are in our solar system?', choices: ['9', '8', '10'], correct: 1 },
+    { q: "What makes Earth have day and night?", choices: ['Earth spinning', 'The Sun moving', 'The Moon blocking it'], correct: 0 },
+    { q: "What is Earth's only natural satellite?", choices: ['Titan', 'Europa', 'The Moon'], correct: 2 },
+    { q: 'Which planet has the easiest rings to see?', choices: ['Saturn', 'Mercury', 'Mars'], correct: 0 },
+    { q: 'What do astronauts wear outside their spacecraft?', choices: ['A wetsuit', 'A space suit', 'A snowsuit'], correct: 1 },
+    { q: 'What is a "shooting star" actually?', choices: ['A meteor', 'A comet', 'A planet'], correct: 0 },
+    { q: "Which planet is famous for its Great Red Spot?", choices: ['Neptune', 'Mars', 'Jupiter'], correct: 2 },
+    { q: 'What force keeps planets orbiting the Sun?', choices: ['Wind', 'Gravity', 'Magnetism'], correct: 1 },
+    { q: 'Who was the first person to walk on the Moon?', choices: ['Buzz Aldrin', 'John Glenn', 'Neil Armstrong'], correct: 2 },
+    { q: 'What do we call a group of stars that forms a pattern?', choices: ['Galaxy', 'Constellation', 'Nebula'], correct: 1 },
+    { q: "Which planet is called Earth's twin because it's a similar size?", choices: ['Venus', 'Mars', 'Mercury'], correct: 0 },
+    { q: 'What is at the center of our solar system?', choices: ['Earth', 'The Moon', 'The Sun'], correct: 2 },
+    { q: "What is the name of NASA's famous space telescope?", choices: ['Hubble', 'Kepler', 'Voyager'], correct: 0 },
+    { q: 'What galaxy is heading toward a collision with the Milky Way?', choices: ['Triangulum', 'Andromeda', 'Whirlpool'], correct: 1 },
+];
 
-function spawnEnemy(time) {
-    enemies.push({
-        x: 40 + Math.random() * (GAME_W - 80),
-        y: -ENEMY_DISPLAY_H,
-        speed: 1.4 + Math.random() * 0.8,
-        hp: 2,
-        r: ENEMY_DISPLAY_H * 0.38,
+function shuffle(arr) {
+    for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+}
+
+const enemyHealthyImg = loadImage('assets/enemy/enemy_ship.png');
+const ENEMY_DISPLAY_H = 58;
+let quizShips = [];
+let questionQueue = [];
+let queuePos = 0;
+let waveEndAt = 0;   // 0 = no wave currently scheduled to start
+let waveIsRetry = false;
+let feedbackTimer = null;
+
+function buildQuestionQueue() {
+    questionQueue = shuffle(QUESTIONS.map((_, i) => i));
+    queuePos = 0;
+}
+function nextQuestion() {
+    if (queuePos >= questionQueue.length) buildQuestionQueue();
+    return QUESTIONS[questionQueue[queuePos++]];
+}
+
+let currentQuestion = null;
+function spawnQuizWave(retry) {
+    currentQuestion = retry && currentQuestion ? currentQuestion : nextQuestion();
+    quizBannerEl.textContent = currentQuestion.q;
+    const options = shuffle(currentQuestion.choices.map((text, i) => ({ text, correct: i === currentQuestion.correct })));
+    const slots = [GAME_W * 0.22, GAME_W * 0.5, GAME_W * 0.78];
+    quizShips = options.map((o, i) => ({
+        x: slots[i],
+        y: -ENEMY_DISPLAY_H - i * 55,
+        speed: 0.75 + Math.random() * 0.35,
+        text: o.text,
+        correct: o.correct,
+        hit: false,
+        r: ENEMY_DISPLAY_H * 0.4,
+    }));
+}
+
+function updateQuizShips(dt) {
+    quizShips.forEach(s => { s.y += s.speed * (dt / 16); });
+    const hadShips = quizShips.length > 0;
+    quizShips = quizShips.filter(s => s.y < GAME_H + ENEMY_DISPLAY_H + 60 && !s.hit);
+    if (hadShips && quizShips.length === 0 && waveEndAt === 0) {
+        // The whole wave drifted off-screen without the correct answer being
+        // hit - give the same question another pass rather than moving on.
+        waveEndAt = performance.now() + 900;
+        waveIsRetry = true;
+    }
+}
+function maybeSpawnQuizWave(time) {
+    if (quizShips.length === 0 && waveEndAt && time >= waveEndAt) {
+        const retry = waveIsRetry;
+        waveEndAt = 0;
+        spawnQuizWave(retry);
+    }
+}
+
+function wrapLines(text, maxWidth) {
+    const words = text.split(' ');
+    const lines = [];
+    let line = '';
+    words.forEach(w => {
+        const test = line ? line + ' ' + w : w;
+        if (line && ctx.measureText(test).width > maxWidth) { lines.push(line); line = w; }
+        else line = test;
     });
-    nextEnemyAt = time + 2600 + Math.random() * 1800;
+    if (line) lines.push(line);
+    return lines;
 }
-function updateEnemies(dt, time) {
-    if (time > nextEnemyAt) spawnEnemy(time);
-    enemies.forEach(e => { e.y += e.speed * (dt / 16); });
-    enemies = enemies.filter(e => e.y < GAME_H + ENEMY_DISPLAY_H);
+function drawLabel(text, cx, topY, maxWidth) {
+    ctx.save();
+    ctx.font = 'bold 12px "Courier New", monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    const lines = wrapLines(text, maxWidth);
+    lines.forEach((line, i) => {
+        const ly = topY + i * 14;
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = 'rgba(0,0,0,0.9)';
+        ctx.strokeText(line, cx, ly);
+        ctx.fillStyle = '#fff9d6';
+        ctx.fillText(line, cx, ly);
+    });
+    ctx.restore();
 }
-function drawEnemies() {
-    enemies.forEach(e => {
-        const img = e.hp > 1 ? enemyHealthyImg : enemyDamagedImg;
+function drawQuizShips() {
+    quizShips.forEach(s => {
+        const img = enemyHealthyImg;
         if (!img.complete || !img.naturalWidth) return;
         const scale = ENEMY_DISPLAY_H / img.naturalHeight;
         const w = img.naturalWidth * scale, h = ENEMY_DISPLAY_H;
-        ctx.drawImage(img, e.x - w / 2, e.y - h / 2, w, h);
+        ctx.drawImage(img, s.x - w / 2, s.y - h / 2, w, h);
+        drawLabel(s.text, s.x, s.y + h / 2 + 4, w + 30);
     });
+}
+
+function showFeedback(text, good) {
+    feedbackEl.textContent = text;
+    feedbackEl.className = good ? 'good' : 'bad';
+    clearTimeout(feedbackTimer);
+    feedbackTimer = setTimeout(() => feedbackEl.classList.add('hidden'), 1100);
 }
 
 // ---------- Explosions (brief effect on hit/kill) ----------
@@ -352,10 +482,16 @@ function resetGame() {
     player.invulnUntil = 0;
     bullets = [];
     asteroids = [];
-    enemies = [];
     explosions = [];
     nextAsteroidAt = 0;
-    nextEnemyAt = performance.now() + 2000;
+    quizShips = [];
+    buildQuestionQueue();
+    currentQuestion = null;
+    quizBannerEl.textContent = 'Get ready...';
+    feedbackEl.classList.add('hidden');
+    clearTimeout(feedbackTimer);
+    waveEndAt = performance.now() + 500;
+    waveIsRetry = false;
     updateHud();
     gameOverEl.classList.add('hidden');
 }
@@ -377,30 +513,26 @@ function resolveCollisions(time) {
         }
     });
 
-    // Player vs enemies
-    enemies.forEach(e => {
-        if (circleHit(player.x, player.y, playerR, e.x, e.y, e.r)) {
-            loseLife(time);
-            spawnExplosion(e.x, e.y, ENEMY_DISPLAY_H);
-            e.y = GAME_H + 999;
-        }
-    });
-
-    // Bullets vs enemies
+    // Bullets vs quiz ships - this is the actual quiz: shoot the one
+    // carrying the correct answer.
     bullets.forEach(b => {
-        enemies.forEach(e => {
-            if (e.hp <= 0) return;
-            if (circleHit(b.x, b.y, 4, e.x, e.y, e.r)) {
-                e.hp -= 1;
-                b.y = -999; // consume bullet
-                if (e.hp <= 0) {
-                    score += 25;
-                    spawnExplosion(e.x, e.y, ENEMY_DISPLAY_H);
-                    e.y = GAME_H + 999;
+        if (b.y < -900) return;
+        quizShips.forEach(s => {
+            if (s.hit) return;
+            if (circleHit(b.x, b.y, 4, s.x, s.y, s.r)) {
+                s.hit = true;
+                b.y = -999;
+                spawnExplosion(s.x, s.y, ENEMY_DISPLAY_H);
+                if (s.correct) {
+                    score += 50;
+                    updateHud();
+                    showFeedback('✓ Correct!', true);
+                    quizShips.forEach(other => { other.hit = true; }); // clear the rest of the wave
+                    waveEndAt = performance.now() + 1400;
+                    waveIsRetry = false;
                 } else {
-                    spawnExplosion(e.x, e.y, ENEMY_DISPLAY_H * 0.6);
+                    showFeedback('Not quite - try again!', false);
                 }
-                updateHud();
             }
         });
     });
@@ -419,7 +551,6 @@ function resolveCollisions(time) {
     });
 
     bullets = bullets.filter(b => b.y > -999);
-    enemies = enemies.filter(e => e.y < GAME_H + 900);
     asteroids = asteroids.filter(a => a.y < GAME_H + 900);
 }
 
@@ -487,7 +618,7 @@ function render(time) {
     ctx.fillRect(0, 0, GAME_W, GAME_H);
     layers.forEach(drawLayer);
     drawAsteroids();
-    drawEnemies();
+    drawQuizShips();
     drawBullets();
     drawPlayer();
     drawExplosions(time);
@@ -505,12 +636,15 @@ function loop(time) {
         if (keys.fire) tryFire(time);
         updateBullets(dt);
         updateAsteroids(dt, time);
-        updateEnemies(dt, time);
+        updateQuizShips(dt);
         resolveCollisions(time);
+        maybeSpawnQuizWave(time);
     }
     render(time);
     requestAnimationFrame(loop);
 }
+buildQuestionQueue();
+waveEndAt = performance.now() + 500;
 updateHud();
 requestAnimationFrame(loop);
 </script>
