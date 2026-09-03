@@ -435,19 +435,22 @@ function showFeedback(text, good) {
 }
 
 // ---------- Explosions (brief effect on hit/kill) ----------
-const explosionImg = loadImage('assets/fx/explosion.png');
+const EXPLOSION_FRAME_COUNT = 10;
+const explosionFrames = Array.from({ length: EXPLOSION_FRAME_COUNT }, (_, i) =>
+    loadImage(`assets/fx/explosion_anim/frame_${i}.png`));
+const EXPLOSION_DURATION_MS = 380;
 let explosions = [];
 function spawnExplosion(x, y, size) {
-    explosions.push({ x, y, size, until: performance.now() + 220 });
+    explosions.push({ x, y, size, start: performance.now() });
 }
 function drawExplosions(time) {
-    explosions = explosions.filter(e => e.until > time);
+    explosions = explosions.filter(e => time - e.start < EXPLOSION_DURATION_MS);
     explosions.forEach(e => {
-        const t = 1 - (e.until - time) / 220;
-        const s = e.size * (0.6 + t * 0.8);
-        ctx.globalAlpha = 1 - t;
-        ctx.drawImage(explosionImg, e.x - s / 2, e.y - s / 2, s, s);
-        ctx.globalAlpha = 1;
+        const t = (time - e.start) / EXPLOSION_DURATION_MS;
+        const frame = Math.max(0, Math.min(EXPLOSION_FRAME_COUNT - 1, Math.floor(t * EXPLOSION_FRAME_COUNT)));
+        const img = explosionFrames[frame];
+        if (!img.complete || !img.naturalWidth) return;
+        ctx.drawImage(img, e.x - e.size / 2, e.y - e.size / 2, e.size, e.size);
     });
 }
 
