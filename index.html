@@ -23,6 +23,8 @@
             touch-action: none;
             -webkit-user-select: none;
             user-select: none;
+            -webkit-touch-callout: none;
+            -webkit-tap-highlight-color: transparent;
             color: #fff;
             font-family: 'Courier New', Courier, monospace;
         }
@@ -40,8 +42,7 @@
             display: block;
             width: 100%;
             height: 100%;
-            image-rendering: pixelated;
-            image-rendering: crisp-edges;
+            touch-action: none;
         }
         #hud {
             position: absolute;
@@ -86,7 +87,7 @@
 </head>
 <body>
 <div id="game-container">
-    <canvas id="gameCanvas" width="405" height="720"></canvas>
+    <canvas id="gameCanvas"></canvas>
     <div id="hud">
         <div id="score">SCORE 0</div>
         <div id="lives">&#9650;&#9650;&#9650;</div>
@@ -102,6 +103,19 @@
 <script>
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
+
+// Logical game coordinate space (everything below is written against this,
+// regardless of screen size). The canvas's actual backing-store resolution
+// is bumped up by devicePixelRatio so the art stays crisp on retina phone
+// screens instead of getting blown up and looking blocky - the CSS size
+// (set in the stylesheet, 100% of #game-container) is what actually
+// determines how big it appears on screen.
+const GAME_W = 405, GAME_H = 720;
+const DPR = Math.max(1, window.devicePixelRatio || 1);
+canvas.width = GAME_W * DPR;
+canvas.height = GAME_H * DPR;
+ctx.scale(DPR, DPR);
+
 const scoreEl = document.getElementById('score');
 const livesEl = document.getElementById('lives');
 const gameOverEl = document.getElementById('gameOver');
@@ -126,12 +140,12 @@ loadLayer('assets/backgrounds/layer4_sparkles.png', 0.9);
 function drawLayer(layer) {
     const img = layer.img;
     if (!img.complete || !img.naturalWidth) return;
-    const scale = canvas.width / img.naturalWidth;
+    const scale = GAME_W / img.naturalWidth;
     const h = img.naturalHeight * scale;
     let y = layer.y % h;
     if (y > 0) y -= h;
-    for (; y < canvas.height; y += h) {
-        ctx.drawImage(img, 0, y, canvas.width, h);
+    for (; y < GAME_H; y += h) {
+        ctx.drawImage(img, 0, y, GAME_W, h);
     }
 }
 function updateLayers(dt) {
@@ -161,8 +175,8 @@ for (let t = 1; t <= TIER_COUNT; t++) {
 const SHIP_DISPLAY_HEIGHT = 68; // on-screen hull height in canvas px, same for every tier
 
 const player = {
-    x: canvas.width / 2,
-    y: canvas.height - 110,
+    x: GAME_W / 2,
+    y: GAME_H - 110,
     tier: 1,
     speed: 4.5,
     invulnUntil: 0,
@@ -194,8 +208,8 @@ function drawPlayer() {
 
 function clampPlayer() {
     const half = SHIP_DISPLAY_HEIGHT / 2;
-    player.x = Math.min(canvas.width - half, Math.max(half, player.x));
-    player.y = Math.min(canvas.height - half, Math.max(half, player.y));
+    player.x = Math.min(GAME_W - half, Math.max(half, player.x));
+    player.y = Math.min(GAME_H - half, Math.max(half, player.y));
 }
 
 // ---------- Bullets ----------
@@ -230,7 +244,7 @@ function spawnAsteroid(time) {
     const img = asteroidImgs[Math.floor(Math.random() * asteroidImgs.length)];
     asteroids.push({
         img,
-        x: ASTEROID_DISPLAY / 2 + Math.random() * (canvas.width - ASTEROID_DISPLAY),
+        x: ASTEROID_DISPLAY / 2 + Math.random() * (GAME_W - ASTEROID_DISPLAY),
         y: -ASTEROID_DISPLAY,
         speed: 2 + Math.random() * 1.8,
         spin: (Math.random() - 0.5) * 0.04,
@@ -242,7 +256,7 @@ function spawnAsteroid(time) {
 function updateAsteroids(dt, time) {
     if (time > nextAsteroidAt) spawnAsteroid(time);
     asteroids.forEach(a => { a.y += a.speed * (dt / 16); a.angle += a.spin * (dt / 16); });
-    asteroids = asteroids.filter(a => a.y < canvas.height + ASTEROID_DISPLAY);
+    asteroids = asteroids.filter(a => a.y < GAME_H + ASTEROID_DISPLAY);
 }
 function drawAsteroids() {
     asteroids.forEach(a => {
@@ -267,7 +281,7 @@ let nextEnemyAt = 2000;
 
 function spawnEnemy(time) {
     enemies.push({
-        x: 40 + Math.random() * (canvas.width - 80),
+        x: 40 + Math.random() * (GAME_W - 80),
         y: -ENEMY_DISPLAY_H,
         speed: 1.4 + Math.random() * 0.8,
         hp: 2,
@@ -278,7 +292,7 @@ function spawnEnemy(time) {
 function updateEnemies(dt, time) {
     if (time > nextEnemyAt) spawnEnemy(time);
     enemies.forEach(e => { e.y += e.speed * (dt / 16); });
-    enemies = enemies.filter(e => e.y < canvas.height + ENEMY_DISPLAY_H);
+    enemies = enemies.filter(e => e.y < GAME_H + ENEMY_DISPLAY_H);
 }
 function drawEnemies() {
     enemies.forEach(e => {
@@ -332,8 +346,8 @@ function resetGame() {
     score = 0;
     lives = 3;
     gameOver = false;
-    player.x = canvas.width / 2;
-    player.y = canvas.height - 110;
+    player.x = GAME_W / 2;
+    player.y = GAME_H - 110;
     player.tier = 1;
     player.invulnUntil = 0;
     bullets = [];
@@ -359,7 +373,7 @@ function resolveCollisions(time) {
         if (circleHit(player.x, player.y, playerR, a.x, a.y, a.r)) {
             loseLife(time);
             spawnExplosion(a.x, a.y, ASTEROID_DISPLAY);
-            a.y = canvas.height + 999; // remove next filter pass
+            a.y = GAME_H + 999; // remove next filter pass
         }
     });
 
@@ -368,7 +382,7 @@ function resolveCollisions(time) {
         if (circleHit(player.x, player.y, playerR, e.x, e.y, e.r)) {
             loseLife(time);
             spawnExplosion(e.x, e.y, ENEMY_DISPLAY_H);
-            e.y = canvas.height + 999;
+            e.y = GAME_H + 999;
         }
     });
 
@@ -382,7 +396,7 @@ function resolveCollisions(time) {
                 if (e.hp <= 0) {
                     score += 25;
                     spawnExplosion(e.x, e.y, ENEMY_DISPLAY_H);
-                    e.y = canvas.height + 999;
+                    e.y = GAME_H + 999;
                 } else {
                     spawnExplosion(e.x, e.y, ENEMY_DISPLAY_H * 0.6);
                 }
@@ -397,7 +411,7 @@ function resolveCollisions(time) {
             if (circleHit(b.x, b.y, 4, a.x, a.y, a.r)) {
                 score += 10;
                 spawnExplosion(a.x, a.y, ASTEROID_DISPLAY);
-                a.y = canvas.height + 999;
+                a.y = GAME_H + 999;
                 b.y = -999;
                 updateHud();
             }
@@ -405,8 +419,8 @@ function resolveCollisions(time) {
     });
 
     bullets = bullets.filter(b => b.y > -999);
-    enemies = enemies.filter(e => e.y < canvas.height + 900);
-    asteroids = asteroids.filter(a => a.y < canvas.height + 900);
+    enemies = enemies.filter(e => e.y < GAME_H + 900);
+    asteroids = asteroids.filter(a => a.y < GAME_H + 900);
 }
 
 // ---------- Input ----------
@@ -436,8 +450,8 @@ let dragging = false;
 function pointerToCanvas(clientX, clientY) {
     const rect = canvas.getBoundingClientRect();
     return {
-        x: (clientX - rect.left) * (canvas.width / rect.width),
-        y: (clientY - rect.top) * (canvas.height / rect.height),
+        x: (clientX - rect.left) * (GAME_W / rect.width),
+        y: (clientY - rect.top) * (GAME_H / rect.height),
     };
 }
 canvas.addEventListener('pointerdown', (e) => {
@@ -470,7 +484,7 @@ function updatePlayer(dt) {
 
 function render(time) {
     ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillRect(0, 0, GAME_W, GAME_H);
     layers.forEach(drawLayer);
     drawAsteroids();
     drawEnemies();
